@@ -18,30 +18,30 @@
 
 package com.movtery.zalithlauncher.filemanager.ui.theme
 
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.TopAppBarColors
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import com.movtery.zalithlauncher.ui.theme.McColors
 
 @Composable
-fun fmBackgroundColor(): Color = MaterialTheme.colorScheme.surfaceContainer
+fun fmBackgroundColor(): Color = McColors.Content
 @Composable
-fun fmOnBackgroundColor(): Color = MaterialTheme.colorScheme.onSurfaceVariant
+fun fmOnBackgroundColor(): Color = McColors.TextSecondary
 
 @Composable
-fun fmCardColor(): Color = MaterialTheme.colorScheme.surfaceBright
+fun fmCardColor(): Color = McColors.Panel
 @Composable
-fun fmOnCardColor(): Color = MaterialTheme.colorScheme.onSurface
+fun fmOnCardColor(): Color = McColors.TextPrimary
 
 @Composable
-fun fmSecondaryTextColor(): Color = MaterialTheme.colorScheme.onSurfaceVariant
+fun fmSecondaryTextColor(): Color = McColors.TextMuted
 
 @Composable
-fun fmErrorColor(): Color = MaterialTheme.colorScheme.error
+fun fmErrorColor(): Color = McColors.Error
 
 @Composable
-fun fmSelectionColor(): Color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+fun fmSelectionColor(): Color = McColors.PlayGreen.copy(alpha = 0.25f)
 
 @Composable
 fun fmTopbarColors(): TopAppBarColors = TopAppBarDefaults.topAppBarColors(

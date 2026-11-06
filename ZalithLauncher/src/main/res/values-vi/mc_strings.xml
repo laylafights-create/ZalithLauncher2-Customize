@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="mc_header_title">MINECRAFT: JAVA EDITION</string>
+    <string name="mc_sidebar_news">Tin tức</string>
+    <string name="mc_sidebar_minecraft">MINECRAFT:</string>
+    <string name="mc_sidebar_java_edition">Java Edition</string>
+    <string name="mc_tab_play">Chơi</string>
+    <string name="mc_tab_installations">Bản cài đặt</string>
+    <string name="mc_tab_skins">Skin</string>
+    <string name="mc_tab_patch_notes">Ghi chú bản vá</string>
+</resources>

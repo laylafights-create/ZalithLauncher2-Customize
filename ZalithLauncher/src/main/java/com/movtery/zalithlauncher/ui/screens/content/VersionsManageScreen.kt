@@ -18,6 +18,20 @@
 
 package com.movtery.zalithlauncher.ui.screens.content
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Text
+import androidx.compose.ui.text.font.FontWeight
+import com.movtery.zalithlauncher.ui.components.McButton
+import com.movtery.zalithlauncher.ui.components.McButtonStyle
+import com.movtery.zalithlauncher.ui.screens.content.elements.McFilterTab
+import com.movtery.zalithlauncher.ui.screens.content.elements.McGamePathItem
+import com.movtery.zalithlauncher.ui.screens.content.elements.McVersionRow
+import com.movtery.zalithlauncher.ui.theme.McColors
 import android.os.Environment
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.horizontalScroll
@@ -360,24 +374,29 @@ private fun LeftMenu(
     val ctx = rememberAnimatedContext(isVisible = isVisible)
 
     Column(
-        modifier = modifier.animated(ctx, from = AnimatedDirection.Left),
+        modifier = modifier
+            .animated(ctx, from = AnimatedDirection.Left)
+            .background(McColors.Background),
     ) {
         val gamePaths by GamePathManager.gamePathData.collectAsStateWithLifecycle()
         val currentPath by GamePathManager.currentPath.collectAsStateWithLifecycle()
         val context = LocalContext.current
 
+        Text(
+            modifier = Modifier.padding(start = 12.dp, top = 14.dp, bottom = 8.dp),
+            text = stringResource(R.string.versions_manage_game_path_default).uppercase(),
+            color = McColors.TextMuted,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold
+        )
+
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f),
-            contentPadding = PaddingValues(
-                start = 12.dp,
-                top = 12.dp,
-                bottom = 12.dp
-            )
+                .weight(1f)
         ) {
             items(gamePaths, key = { it.id }) { pathItem ->
-                GamePathItemLayout(
+                McGamePathItem(
                     item = pathItem,
                     selected = currentPath == pathItem.path,
                     enabled = canHandlePermission,
@@ -399,21 +418,20 @@ private fun LeftMenu(
                             }
                         }
                     },
-                    onDelete = {
-                        changePathOperation(GamePathOperation.DeletePath(pathItem))
-                    },
-                    onRename = {
-                        changePathOperation(GamePathOperation.RenamePath(pathItem))
-                    }
+                    onDelete = { changePathOperation(GamePathOperation.DeletePath(pathItem)) },
+                    onRename = { changePathOperation(GamePathOperation.RenamePath(pathItem)) }
                 )
             }
         }
 
-        ScalingActionButton(
+        HorizontalDivider(color = McColors.Outline, thickness = 1.dp)
+
+        McButton(
             modifier = Modifier
-                .padding(start = 12.dp)
-                .padding(top = 8.dp)
+                .padding(horizontal = 10.dp)
+                .padding(top = 10.dp)
                 .fillMaxWidth(),
+            enabled = canHandlePermission,
             onClick = {
                 (context as? MainActivity)?.let { activity ->
                     checkStoragePermissions(
@@ -425,24 +443,31 @@ private fun LeftMenu(
                         }
                     )
                 }
-            },
-            enabled = canHandlePermission
+            }
         ) {
-            MarqueeText(text = stringResource(R.string.versions_manage_game_path_add_new))
+            Text(
+                text = stringResource(R.string.versions_manage_game_path_add_new),
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1
+            )
         }
 
-        ScalingActionButton(
+        McButton(
             modifier = Modifier
-                .padding(start = 12.dp, top = 8.dp, bottom = 12.dp)
+                .padding(horizontal = 10.dp)
+                .padding(top = 8.dp, bottom = 10.dp)
                 .fillMaxWidth(),
             onClick = onCleanupGameFiles
         ) {
-            MarqueeText(text = stringResource(R.string.versions_manage_cleanup))
+            Text(
+                text = stringResource(R.string.versions_manage_cleanup),
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1
+            )
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun VersionsLayout(
     modifier: Modifier = Modifier,
@@ -464,20 +489,66 @@ private fun VersionsLayout(
 ) {
     val ctx = rememberAnimatedContext(isVisible = isVisible)
 
-    PullToRefreshBox(
-        modifier = modifier.animated(ctx),
-        isRefreshing = false,
-        enabled = !isRefreshing,
-        onRefresh = onRefresh
-    ) {
-        if (isRefreshing) { //版本正在刷新中
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
+    Column(modifier = modifier.animated(ctx)) {
+        // Thanh công cụ: tab lọc bên trái, nút Refresh / New installation bên phải
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .background(McColors.Background),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .horizontalScroll(rememberScrollState())
             ) {
-                LoadingIndicator()
+                McFilterTab(
+                    value = VersionCategory.ALL,
+                    versionsCount = allVersionsCount,
+                    selected = versionCategory == VersionCategory.ALL,
+                    onClick = { onCategoryChange(VersionCategory.ALL) }
+                )
+                McFilterTab(
+                    value = VersionCategory.VANILLA,
+                    versionsCount = vanillaVersionsCount,
+                    selected = versionCategory == VersionCategory.VANILLA,
+                    onClick = { onCategoryChange(VersionCategory.VANILLA) }
+                )
+                McFilterTab(
+                    value = VersionCategory.MODLOADER,
+                    versionsCount = modloaderVersionsCount,
+                    selected = versionCategory == VersionCategory.MODLOADER,
+                    onClick = { onCategoryChange(VersionCategory.MODLOADER) }
+                )
             }
-        } else {
+
+            IconButton(onClick = onRefresh, enabled = !isRefreshing) {
+                Icon(
+                    modifier = Modifier.size(22.dp),
+                    painter = painterResource(R.drawable.ic_refresh),
+                    tint = McColors.TextSecondary,
+                    contentDescription = stringResource(R.string.generic_refresh)
+                )
+            }
+            McButton(
+                modifier = Modifier.padding(horizontal = 8.dp),
+                style = McButtonStyle.Play,
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                onClick = onInstall
+            ) {
+                Text(
+                    text = stringResource(R.string.versions_manage_install_new),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1
+                )
+            }
+        }
+        HorizontalDivider(color = McColors.Outline, thickness = 1.dp)
+
+        Box(modifier = Modifier.fillMaxSize()) {
             var versionsOperation by remember { mutableStateOf<VersionsOperation>(VersionsOperation.None) }
             VersionsOperation(
                 versionsOperation = versionsOperation,
@@ -485,85 +556,40 @@ private fun VersionsLayout(
                 submitError = submitError
             )
 
-            // 操作栏滚动吸附
-            val density = LocalDensity.current
-            val topAppBarState = rememberTopAppBarState()
-            val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior(topAppBarState)
-            val headerTopPaddingPx = with(density) { 12.dp.toPx() }
-            var headerHeightPx by remember { mutableIntStateOf(0) }
-
-            // 操作栏阴影跟随滚动线性过渡
-            val listState = rememberLazyListState()
-            val listScrolledFraction = remember(listState, headerTopPaddingPx) {
-                derivedStateOf {
-                    if (listState.firstVisibleItemIndex > 0) 1f
-                    else {
-                        val rampPx = headerTopPaddingPx + (listState.layoutInfo.visibleItemsInfo.firstOrNull()?.size ?: 0)
-                        (listState.firstVisibleItemScrollOffset / rampPx.coerceAtLeast(1f)).coerceIn(0f, 1f)
-                    }
+            when {
+                isRefreshing -> {
+                    CircularProgressIndicator(
+                        modifier = Modifier.align(Alignment.Center),
+                        color = McColors.PlayGreenLight
+                    )
                 }
-            }
-            val barShownFraction = remember(topAppBarState) {
-                derivedStateOf { 1f - topAppBarState.collapsedFraction }
-            }
-            //背景可见时不使用阴影，因为卡片会半透明化
-            val withShadow = !backgroundVisible()
-
-            //悬浮操作栏的阴影在图层块内读取滚动比例，滚动时只更新图层不重组
-            val barShape = MaterialTheme.shapes.large
-            val barShadowModifier = Modifier.graphicsLayer {
-                if (withShadow) {
-                    shadowElevation = 5.dp.toPx() * listScrolledFraction.value * barShownFraction.value
+                versions.isEmpty() -> {
+                    Text(
+                        modifier = Modifier.align(Alignment.Center),
+                        text = stringResource(R.string.versions_manage_no_versions),
+                        color = McColors.TextMuted,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
                 }
-                shape = barShape
-            }
-
-            Box(modifier = Modifier.fillMaxSize()) {
-                if (versions.isNotEmpty()) {
+                else -> {
                     LazyColumn(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .nestedScroll(scrollBehavior.nestedScrollConnection)
-                            .topBarWheelFallback(topAppBarState)
-                            .nonInteractiveScrollbar(
-                                state = listState.scrollIndicatorState!!,
-                                orientation = Orientation.Vertical,
-                            )
-                            .clipToBounds()
-                            .topFade {
-                                (headerHeightPx + headerTopPaddingPx + 80f) *
-                                        listScrolledFraction.value *
-                                        barShownFraction.value
-                            },
-                        contentPadding = PaddingValues(
-                            start = 12.dp,
-                            top = with(density) {
-                                (headerHeightPx + topAppBarState.heightOffset).coerceAtLeast(0f).toDp()
-                            },
-                            end = 12.dp,
-                            bottom = 12.dp
-                        ),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         items(versions, key = { it.toString() }) { version ->
-                            VersionItemLayout(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .animateItem(),
+                            McVersionRow(
+                                modifier = Modifier.animateItem(),
                                 version = version,
                                 selected = version == currentVersion,
                                 submitError = submitError,
                                 onSelected = {
-                                    if (version == currentVersion) return@VersionItemLayout
                                     if (!VersionsManager.saveVersion(version)) {
                                         //不允许选择无效版本
                                         versionsOperation = VersionsOperation.InvalidDelete(version)
                                     }
                                 },
-                                onSettingsClick = {
-                                    navigateToVersions(version)
-                                },
+                                onSettingsClick = { navigateToVersions(version) },
                                 onRenameClick = { versionsOperation = VersionsOperation.Rename(version) },
                                 onCopyClick = { versionsOperation = VersionsOperation.Copy(version) },
                                 onExportClick = { navigateToExport(version) },
@@ -572,137 +598,8 @@ private fun VersionsLayout(
                             )
                         }
                     }
-                } else {
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        ScalingLabel(
-                            modifier = Modifier.align(Alignment.Center),
-                            text = stringResource(R.string.versions_manage_no_versions)
-                        )
-                    }
-                }
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .zIndex(1f)
-                        .onSizeChanged {
-                            headerHeightPx = it.height
-                            topAppBarState.heightOffsetLimit = -it.height.toFloat()
-                        }
-                        .offset { IntOffset(x = 0, y = topAppBarState.heightOffset.roundToInt()) }
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(IntrinsicSize.Min)
-                            .padding(all = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        val blur = AllSettings.backgroundBlur.state
-                        val cardColor = cardColor()
-
-                        Surface(
-                            modifier = Modifier
-                                .height(IntrinsicSize.Max)
-                                .then(barShadowModifier),
-                            color = cardColor,
-                            contentColor = onCardColor(),
-                            shape = MaterialTheme.shapes.large,
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .backgroundGlass(blur, cardColor)
-                                    .padding(all = 8.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                IconTextButton(
-                                    onClick = onRefresh,
-                                    painter = painterResource(R.drawable.ic_refresh),
-                                    contentDescription = stringResource(R.string.generic_refresh),
-                                    text = stringResource(R.string.generic_refresh)
-                                )
-                                IconTextButton(
-                                    onClick = onInstall,
-                                    painter = painterResource(R.drawable.ic_download),
-                                    contentDescription = stringResource(R.string.versions_manage_install_new),
-                                    text = stringResource(R.string.versions_manage_install_new),
-                                )
-                            }
-                        }
-
-                        // 版本分类
-                        Surface(
-                            modifier = Modifier
-                                .weight(1f, fill = false)
-                                .height(IntrinsicSize.Max)
-                                .then(barShadowModifier),
-                            color = cardColor,
-                            contentColor = onCardColor(),
-                            shape = MaterialTheme.shapes.large,
-                        ) {
-                            val scrollState = rememberScrollState()
-                            Row(
-                                modifier = Modifier
-                                    .backgroundGlass(blur, cardColor)
-                                    .fadeEdge(
-                                        state = scrollState,
-                                        length = 32.dp,
-                                        direction = EdgeDirection.Horizontal
-                                    )
-                                    .horizontalScroll(state = scrollState)
-                                    .padding(all = 8.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                VersionCategoryItem(
-                                    value = VersionCategory.ALL,
-                                    versionsCount = allVersionsCount,
-                                    selected = versionCategory == VersionCategory.ALL,
-                                    onClick = { onCategoryChange(VersionCategory.ALL) }
-                                )
-                                VersionCategoryItem(
-                                    value = VersionCategory.VANILLA,
-                                    versionsCount = vanillaVersionsCount,
-                                    selected = versionCategory == VersionCategory.VANILLA,
-                                    onClick = { onCategoryChange(VersionCategory.VANILLA) }
-                                )
-                                VersionCategoryItem(
-                                    value = VersionCategory.MODLOADER,
-                                    versionsCount = modloaderVersionsCount,
-                                    selected = versionCategory == VersionCategory.MODLOADER,
-                                    onClick = { onCategoryChange(VersionCategory.MODLOADER) }
-                                )
-                            }
-                        }
-                    }
                 }
             }
         }
     }
 }
-
-/**
- * 在组件顶部绘制指定像素高度的线性渐隐；高度在绘制阶段读取，随滚动只触发重绘
- */
-private fun Modifier.topFade(heightPx: () -> Float): Modifier = this
-    .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
-    .drawWithContent {
-        drawContent()
-        val height = heightPx()
-        if (height <= 0f) return@drawWithContent
-        inset(
-            left = 0f,
-            top = 0f,
-            right = 0f,
-            bottom = (size.height - height).coerceAtLeast(0f)
-        ) {
-            drawRect(
-                brush = TopFadeBrush,
-                blendMode = BlendMode.DstOut
-            )
-        }
-    }
-
-/** 顶部渐隐使用的固定渐变 */
-private val TopFadeBrush = Brush.verticalGradient(0f to Color.Black, 1f to Color.Transparent)

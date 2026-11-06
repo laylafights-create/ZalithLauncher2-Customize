@@ -18,61 +18,54 @@
 
 package com.movtery.zalithlauncher.ui.theme
 
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
-import com.movtery.zalithlauncher.setting.enums.isLauncherInDarkTheme
 import com.movtery.zalithlauncher.ui.components.influencedByBackgroundColor
 
-/** 应用整体背景的颜色 */
+/*
+ * Các hàm màu dùng chung cho toàn bộ launcher, ánh xạ thẳng sang [McColors]
+ * (phong cách Minecraft Launcher: xám than, phẳng, viền đen mảnh).
+ * Chữ ký hàm được giữ nguyên để các màn hình cũ không cần sửa.
+ */
+
+/** Màu nền vùng nội dung. */
 @Composable
-fun backgroundColor(): Color = MaterialTheme.colorScheme.surfaceContainer
+fun backgroundColor(): Color = McColors.Content
+
 @Composable
-fun onBackgroundColor(): Color = MaterialTheme.colorScheme.onSurfaceVariant
+fun onBackgroundColor(): Color = McColors.TextSecondary
 
 /**
- * 卡片背景颜色
- * [androidx.compose.material3.Card]
- * [com.movtery.zalithlauncher.ui.components.BackgroundCard]
- * [androidx.compose.ui.window.Dialog]
- * @param influencedByBackground 是否受背景内容影响，更改自身不透明度
+ * Màu nền thẻ / dialog.
+ * @param influencedByBackground vẫn hỗ trợ độ mờ khi người dùng đặt ảnh nền tuỳ chỉnh
  */
 @Composable
 fun cardColor(
     influencedByBackground: Boolean = true
 ): Color = influencedByBackgroundColor(
-    color = MaterialTheme.colorScheme.surfaceBright,
+    color = McColors.Panel,
     enabled = influencedByBackground
 )
+
 @Composable
-fun onCardColor(): Color = MaterialTheme.colorScheme.onSurface
-/**
- * 卡片顶部Title的背景颜色，半透明的surface
- */
+fun onCardColor(): Color = McColors.TextPrimary
+
+/** Màu thanh tiêu đề trên cùng của thẻ: tối hơn thân thẻ, giống thanh tiêu đề của launcher. */
 @Composable
 fun cardTitleColor(
     alpha: Float = 0.5f
-): Color = MaterialTheme.colorScheme.surface.copy(alpha = alpha)
+): Color = McColors.Background.copy(alpha = alpha.coerceAtLeast(0.85f))
 
-/**
- * 卡片上的Item的背景颜色
- * @param influencedByBackground 是否受背景内容影响，更改自身不透明度
- */
+/** Màu từng dòng (item) nằm trong thẻ. */
 @Composable
+@Suppress("UNUSED_PARAMETER")
 fun itemColor(
     influencedByBackground: Boolean = true,
-    isDark: Boolean = isLauncherInDarkTheme()
-): Color {
-    return influencedByBackgroundColor(
-        color = if (isDark) {
-            MaterialTheme.colorScheme.surfaceVariant
-        } else {
-            MaterialTheme.colorScheme.surfaceColorAtElevation(2.dp)
-        },
-        enabled = influencedByBackground
-    )
-}
+    isDark: Boolean = true
+): Color = influencedByBackgroundColor(
+    color = McColors.PanelHigh,
+    enabled = influencedByBackground
+)
+
 @Composable
-fun onItemColor() = MaterialTheme.colorScheme.onSurface
+fun onItemColor() = McColors.TextPrimary

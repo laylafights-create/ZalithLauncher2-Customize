@@ -18,6 +18,7 @@
 
 package com.movtery.zalithlauncher.ui.components
 
+import com.movtery.zalithlauncher.ui.theme.McColors
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -65,7 +66,7 @@ fun BackgroundCard(
     ),
     elevation: CardElevation = flatCardElevation(),
     blur: Int = AllSettings.backgroundBlur.state,
-    border: BorderStroke? = null,
+    border: BorderStroke? = BorderStroke(1.dp, McColors.Outline),
     content: @Composable ColumnScope.() -> Unit
 ) {
     Card(
@@ -98,7 +99,7 @@ fun BackgroundCard(
     ),
     elevation: CardElevation = flatCardElevation(),
     blur: Int = AllSettings.backgroundBlur.state,
-    border: BorderStroke? = null,
+    border: BorderStroke? = BorderStroke(1.dp, McColors.Outline),
     onClick: () -> Unit,
     enabled: Boolean = true,
     content: @Composable @UiComposable ColumnScope.() -> Unit
@@ -149,6 +150,10 @@ fun CardTitleLayout(
                 content = content
             )
         }
-        HorizontalDivider(modifier = Modifier.fillMaxWidth())
+        HorizontalDivider(
+            modifier = Modifier.fillMaxWidth(),
+            thickness = 2.dp,
+            color = McColors.Outline
+        )
     }
 }

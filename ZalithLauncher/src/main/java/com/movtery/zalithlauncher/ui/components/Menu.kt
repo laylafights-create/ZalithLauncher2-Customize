@@ -52,7 +52,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SliderColors
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
@@ -123,7 +122,7 @@ enum class MenuState {
 fun MenuSubscreen(
     state: MenuState,
     closeScreen: () -> Unit,
-    shape: Shape = RoundedCornerShape(21.0.dp),
+    shape: Shape = RoundedCornerShape(2.dp),
     backgroundColor: Color = Color.Black.copy(alpha = 0.25f),
     content: @Composable ColumnScope.() -> Unit
 ) {
@@ -183,7 +182,7 @@ fun MenuSubscreen(
 fun DualMenuSubscreen(
     state: MenuState,
     closeScreen: () -> Unit,
-    shape: Shape = RoundedCornerShape(21.0.dp),
+    shape: Shape = RoundedCornerShape(2.dp),
     backgroundColor: Color = Color.Black.copy(alpha = 0.25f),
     titleHeight: Dp = 48.dp,
     leftMenuTitle: (@Composable BoxScope.() -> Unit)? = null,

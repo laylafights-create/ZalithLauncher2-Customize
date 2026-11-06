@@ -18,6 +18,14 @@
 
 package com.movtery.zalithlauncher.ui.screens.content
 
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.platform.LocalContext
+import com.movtery.petlib.PetAnimation
+import com.movtery.zalithlauncher.game.account.wardrobe.toArmModel
+import com.movtery.zalithlauncher.ui.components.PetModelView
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -79,11 +87,10 @@ import com.movtery.zalithlauncher.ui.screens.content.elements.PlayerFace
 import com.movtery.zalithlauncher.ui.theme.McColors
 import com.movtery.zalithlauncher.viewmodel.ScreenBackStackViewModel
 
-private val BlockSize = 28.dp
 
 /**
  * Màn hình chính kiểu Minecraft Launcher:
- *  - phần trên: ảnh nền khối pixel + logo chữ + hàng thẻ lối tắt
+ *  - phần trên: nhân vật 3D của tài khoản đứng giữa nền gradient
  *  - phần dưới: thanh Play (chọn phiên bản | nút PLAY | tài khoản)
  */
 @Composable
@@ -107,40 +114,13 @@ fun LauncherScreen(
                 screenKey = NormalNavKey.AccountManager(FirstLoginMenu.NONE)
             )
         }
-        val toDownloadScreen: () -> Unit = {
-            backStackViewModel.navigateToDownload()
-        }
-        val toSettingsScreen: () -> Unit = {
-            backStackViewModel.mainScreen.removeAndNavigateTo(
-                removes = backStackViewModel.clearBeforeNavKeys,
-                screenKey = backStackViewModel.settingsScreen
-            )
-        }
 
         Column(modifier = Modifier.fillMaxSize()) {
-            Box(
+            PlayerStage(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-            ) {
-                PixelLandscape(modifier = Modifier.matchParentSize())
-
-                HeroTitle(
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(start = 28.dp, top = 24.dp)
-                )
-
-                ShortcutRow(
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .fillMaxWidth(),
-                    toVersionManageScreen = toVersionManageScreen,
-                    toDownloadScreen = toDownloadScreen,
-                    toAccountManageScreen = toAccountManageScreen,
-                    toSettingsScreen = toSettingsScreen
-                )
-            }
+            )
 
             PlayBar(
                 modifier = Modifier.fillMaxWidth(),
@@ -154,142 +134,54 @@ fun LauncherScreen(
 }
 
 /**
- * Ảnh nền tự vẽ: bầu trời + mặt đất ghép từ các khối cỏ / đất / đá.
- * Không dùng tài nguyên ảnh nào nên không phụ thuộc vào drawable.
+ * Sân khấu giữa màn hình: nền gradient nâu đỏ, nhân vật 3D của tài khoản đang chọn
+ * đứng giữa (kéo để xoay, chạm để có phản ứng).
  */
 @Composable
-private fun PixelLandscape(modifier: Modifier = Modifier) {
-    Canvas(modifier = modifier) {
-        val block = BlockSize.toPx()
-        val cols = (size.width / block).toInt() + 1
-        val rows = (size.height / block).toInt() + 1
-        val horizon = (rows * 0.58f).toInt().coerceAtLeast(1)
-        val horizonY = horizon * block
+private fun PlayerStage(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val account by AccountsManager.currentAccountFlow.collectAsStateWithLifecycle()
 
-        // Bầu trời
-        drawRect(
-            brush = Brush.verticalGradient(
-                colors = listOf(Color(0xFF0E1A2B), Color(0xFF4A7BB5)),
-                startY = 0f,
-                endY = horizonY
-            ),
-            size = Size(size.width, horizonY)
-        )
-        // Mặt trời vuông
-        drawRect(
-            color = Color(0xFFF5E6A8),
-            topLeft = Offset(size.width * 0.78f, block * 1.5f),
-            size = Size(block * 1.6f, block * 1.6f)
-        )
+    // Đọc file skin của tài khoản; không có thì PetModelView dùng skin mặc định (Steve/Alex)
+    val skin by produceState<ByteArray?>(null, account?.uniqueUUID, account?.skinModelType) {
+        value = withContext(Dispatchers.IO) {
+            account?.getSkinFile()
+                ?.takeIf { it.exists() }
+                ?.runCatching { readBytes() }
+                ?.getOrNull()
+        }
+    }
+    val cape by produceState<ByteArray?>(null, account?.uniqueUUID) {
+        value = withContext(Dispatchers.IO) {
+            account?.getCapeFile()
+                ?.takeIf { it.exists() }
+                ?.runCatching { readBytes() }
+                ?.getOrNull()
+        }
+    }
 
-        val grass = listOf(Color(0xFF5B8731), Color(0xFF4F7A2A), Color(0xFF67963A))
-        val dirt = listOf(Color(0xFF8A5A3B), Color(0xFF7A4F33), Color(0xFF96633F))
-        val stone = listOf(Color(0xFF6B6B6B), Color(0xFF5E5E5E), Color(0xFF777777))
-
-        for (row in horizon until rows) {
-            for (col in 0 until cols) {
-                val noise = (((col * 31 + row * 17).toLong() * 2654435761L) ushr 8)
-                    .toInt()
-                    .and(0x7fffffff) % 3
-                val color = when {
-                    row == horizon -> grass[noise]
-                    row <= horizon + 2 -> dirt[noise]
-                    else -> stone[noise]
-                }
-                drawRect(
-                    color = color,
-                    topLeft = Offset(col * block, row * block),
-                    size = Size(block, block)
+    Box(
+        modifier = modifier.background(
+            Brush.verticalGradient(
+                colors = listOf(
+                    Color(0xFF2E1410),
+                    Color(0xFF7A2E16),
+                    Color(0xFF3A1711)
                 )
-            }
-        }
-
-        // Làm tối nửa dưới để chữ / thẻ dễ đọc
-        drawRect(
-            brush = Brush.verticalGradient(
-                colors = listOf(Color.Transparent, Color(0xCC000000)),
-                startY = size.height * 0.45f,
-                endY = size.height
             )
-        )
-    }
-}
-
-@Composable
-private fun HeroTitle(modifier: Modifier = Modifier) {
-    val shadow = Shadow(color = Color.Black, offset = Offset(5f, 5f), blurRadius = 0f)
-    Column(modifier = modifier) {
-        Text(
-            text = "MINECRAFT",
-            style = TextStyle(
-                fontSize = 44.sp,
-                fontWeight = FontWeight.Black,
-                letterSpacing = 4.sp,
-                color = Color.White,
-                shadow = shadow
-            )
-        )
-        Text(
-            text = "JAVA EDITION",
-            style = TextStyle(
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 8.sp,
-                color = Color(0xFFE0E0E0),
-                shadow = shadow
-            )
-        )
-    }
-}
-
-@Composable
-private fun ShortcutRow(
-    modifier: Modifier = Modifier,
-    toVersionManageScreen: () -> Unit,
-    toDownloadScreen: () -> Unit,
-    toAccountManageScreen: () -> Unit,
-    toSettingsScreen: () -> Unit
-) {
-    LazyRow(
-        modifier = modifier,
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ),
+        contentAlignment = Alignment.Center
     ) {
-        item {
-            McNewsCard(
-                modifier = Modifier.width(210.dp),
-                title = stringResource(R.string.page_title_version_list),
-                painter = painterResource(R.drawable.ic_folder_zip_filled),
-                onClick = toVersionManageScreen
-            )
-        }
-        item {
-            McNewsCard(
-                modifier = Modifier.width(210.dp),
-                title = stringResource(R.string.generic_download),
-                painter = painterResource(R.drawable.ic_download_2_filled),
-                onClick = toDownloadScreen,
-                accent = McColors.Dirt
-            )
-        }
-        item {
-            McNewsCard(
-                modifier = Modifier.width(210.dp),
-                title = stringResource(R.string.page_title_account_list),
-                painter = painterResource(R.drawable.ic_person_filled),
-                onClick = toAccountManageScreen,
-                accent = Color(0xFF4A7BB5)
-            )
-        }
-        item {
-            McNewsCard(
-                modifier = Modifier.width(210.dp),
-                title = stringResource(R.string.generic_setting),
-                painter = painterResource(R.drawable.ic_settings_filled),
-                onClick = toSettingsScreen,
-                accent = McColors.StoneLight
-            )
-        }
+        PetModelView(
+            modifier = Modifier
+                .fillMaxHeight()
+                .fillMaxWidth(0.5f),
+            skin = skin,
+            cape = cape,
+            arm = account?.skinModelType?.toArmModel(),
+            animation = PetAnimation.Idle,
+            gazeEnabled = false
+        )
     }
 }
 
@@ -363,16 +255,8 @@ private fun PlayBar(
                 )
             }
 
-            // Phải: tài khoản hiện tại
-            Box(
-                modifier = Modifier.weight(1f),
-                contentAlignment = Alignment.CenterEnd
-            ) {
-                AccountChip(
-                    account = account,
-                    onClick = toAccountManageScreen
-                )
-            }
+            // Phải: để trống cho cân bố cục (tài khoản đã nằm ở thanh bên)
+            Box(modifier = Modifier.weight(1f))
         }
     }
 }
@@ -453,6 +337,7 @@ private fun VersionSelector(
 }
 
 @Composable
+@Suppress("unused")
 private fun AccountChip(
     account: com.movtery.zalithlauncher.game.account.Account?,
     onClick: () -> Unit,

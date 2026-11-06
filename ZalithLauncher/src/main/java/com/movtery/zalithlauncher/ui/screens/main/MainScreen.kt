@@ -18,6 +18,13 @@
 
 package com.movtery.zalithlauncher.ui.screens.main
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.text.style.TextOverflow
+import com.movtery.zalithlauncher.game.account.AccountsManager
+import com.movtery.zalithlauncher.game.account.getAccountTypeName
+import com.movtery.zalithlauncher.ui.screens.content.elements.PlayerFace
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
@@ -165,6 +172,16 @@ fun MainScreen(
 
     val mainScreenKey = screenBackStackModel.mainScreen.currentKey
     val inLauncherScreen = mainScreenKey == null || mainScreenKey is NormalNavKey.LauncherMain
+    val webUrl = (mainScreenKey as? NormalNavKey.WebScreen)?.url
+    val inVersions = mainScreenKey is NormalNavKey.VersionsManager ||
+            mainScreenKey is NestedNavKey.VersionSettings ||
+            mainScreenKey is NestedNavKey.VersionExport
+    val inAccounts = mainScreenKey is NormalNavKey.AccountManager
+    val inPatchNotes = webUrl == PATCH_NOTES_URL
+    val inNews = webUrl != null && !inPatchNotes
+    val inSettings = mainScreenKey is NestedNavKey.Settings
+    // Các trang thuộc mục "Java Edition" có header + tab Play / Installations / Skins / Patch notes
+    val inJavaSection = inLauncherScreen || inVersions || inAccounts || inPatchNotes
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -174,40 +191,58 @@ fun MainScreen(
         Row(modifier = Modifier.fillMaxSize()) {
             MinecraftSidebar(
                 modifier = Modifier
-                    .width(88.dp)
+                    .width(190.dp)
                     .fillMaxHeight(),
-                mainScreenKey = mainScreenKey,
-                inLauncherScreen = inLauncherScreen,
-                toMainScreen = toMainScreen,
-                toVersionsScreen = { navigateTop(NormalNavKey.VersionsManager) },
+                inJavaEdition = inJavaSection,
+                inNews = inNews,
+                inSettings = inSettings,
+                inAccounts = inAccounts,
                 toAccountScreen = { navigateTop(NormalNavKey.AccountManager(FirstLoginMenu.NONE)) },
-                toDownloadScreen = { screenBackStackModel.navigateToDownload() },
-                toMultiplayerScreen = { navigateTop(NormalNavKey.Multiplayer) },
-                toSettingsScreen = { navigateTop(screenBackStackModel.settingsScreen) },
-                openFileManager = {
-                    eventViewModel.sendEvent(
-                        EventViewModel.Event.OpenFileManager(
-                            rootPath = PathManager.DIR_FILES_EXTERNAL.absolutePath
-                        )
-                    )
-                }
+                toNewsScreen = { navigateTop(NormalNavKey.WebScreen(NEWS_URL)) },
+                toJavaEdition = { if (!inLauncherScreen) toMainScreen() },
+                toSettingsScreen = { navigateTop(screenBackStackModel.settingsScreen) }
             )
 
             McVerticalDivider()
 
             Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                MinecraftTopBar(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(44.dp),
-                    mainScreenKey = mainScreenKey,
-                    inLauncherScreen = inLauncherScreen,
-                    showTaskChip = !(isTaskMenuExpanded || noTasks),
-                    onScreenBack = {
-                        screenBackStackModel.mainScreen.backStack.removeFirstOrNull()
-                    },
-                    changeExpandedState = { changeTasksExpandedState() }
-                )
+                if (inJavaSection) {
+                    McJavaHeader(
+                        modifier = Modifier.fillMaxWidth(),
+                        inPlay = inLauncherScreen,
+                        inInstallations = inVersions,
+                        inSkins = inAccounts,
+                        inPatchNotes = inPatchNotes,
+                        showTaskChip = !(isTaskMenuExpanded || noTasks),
+                        toPlay = { if (!inLauncherScreen) toMainScreen() },
+                        toInstallations = { if (!inVersions) navigateTop(NormalNavKey.VersionsManager) },
+                        toSkins = { if (!inAccounts) navigateTop(NormalNavKey.AccountManager(FirstLoginMenu.NONE)) },
+                        toPatchNotes = { if (!inPatchNotes) navigateTop(NormalNavKey.WebScreen(PATCH_NOTES_URL)) },
+                        toDownload = { screenBackStackModel.navigateToDownload() },
+                        toMultiplayer = { navigateTop(NormalNavKey.Multiplayer) },
+                        openFileManager = {
+                            eventViewModel.sendEvent(
+                                EventViewModel.Event.OpenFileManager(
+                                    rootPath = PathManager.DIR_FILES_EXTERNAL.absolutePath
+                                )
+                            )
+                        },
+                        changeExpandedState = { changeTasksExpandedState() }
+                    )
+                } else {
+                    MinecraftTopBar(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp),
+                        mainScreenKey = mainScreenKey,
+                        inLauncherScreen = inLauncherScreen,
+                        showTaskChip = !(isTaskMenuExpanded || noTasks),
+                        onScreenBack = {
+                            screenBackStackModel.mainScreen.backStack.removeFirstOrNull()
+                        },
+                        changeExpandedState = { changeTasksExpandedState() }
+                    )
+                }
                 HorizontalDivider(color = McColors.Outline, thickness = 1.dp)
 
                 Box(
@@ -244,82 +279,269 @@ fun MainScreen(
     }
 }
 
+private const val NEWS_URL = "https://www.minecraft.net/en-us/articles"
+private const val PATCH_NOTES_URL = "https://feedback.minecraft.net/hc/en-us/sections/360001186971-Release-Changelogs"
+
 /**
- * Thanh điều hướng bên trái, giống Minecraft Launcher: Play / Installations / Accounts / ...
+ * Thanh bên giống Minecraft Launcher: tài khoản ở đầu, News, Java Edition, Settings ở cuối.
  */
 @Composable
-private fun <E: TitledNavKey> MinecraftSidebar(
-    mainScreenKey: E?,
-    inLauncherScreen: Boolean,
-    toMainScreen: () -> Unit,
-    toVersionsScreen: () -> Unit,
+private fun MinecraftSidebar(
+    inJavaEdition: Boolean,
+    inNews: Boolean,
+    inSettings: Boolean,
+    inAccounts: Boolean,
     toAccountScreen: () -> Unit,
-    toDownloadScreen: () -> Unit,
-    toMultiplayerScreen: () -> Unit,
+    toNewsScreen: () -> Unit,
+    toJavaEdition: () -> Unit,
     toSettingsScreen: () -> Unit,
-    openFileManager: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val inVersions = mainScreenKey is NormalNavKey.VersionsManager ||
-            mainScreenKey is NestedNavKey.VersionSettings ||
-            mainScreenKey is NestedNavKey.VersionExport
-    val inAccounts = mainScreenKey is NormalNavKey.AccountManager
-    val inDownload = mainScreenKey is NestedNavKey.Download
-    val inMultiplayer = mainScreenKey is NormalNavKey.Multiplayer
-    val inSettings = mainScreenKey is NestedNavKey.Settings
+    val account by AccountsManager.currentAccountFlow.collectAsStateWithLifecycle()
 
-    Column(
-        modifier = modifier.background(McColors.Background)
-    ) {
+    Column(modifier = modifier.background(McColors.Background)) {
+        // Tài khoản đang dùng (bấm để mở danh sách tài khoản)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = toAccountScreen)
+                .padding(horizontal = 12.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            val acc = account
+            if (acc != null) {
+                PlayerFace(account = acc, avatarSize = 32.dp)
+            } else {
+                Icon(
+                    modifier = Modifier.size(32.dp),
+                    painter = painterResource(R.drawable.ic_person_filled),
+                    tint = McColors.TextSecondary,
+                    contentDescription = null
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = acc?.username ?: stringResource(R.string.account_add_new_account),
+                    color = McColors.TextPrimary,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (acc != null) {
+                    Text(
+                        text = getAccountTypeName(acc),
+                        color = McColors.TextMuted,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            Icon(
+                modifier = Modifier.size(20.dp),
+                painter = painterResource(R.drawable.ic_arrow_drop_down_rounded),
+                tint = McColors.TextSecondary,
+                contentDescription = null
+            )
+        }
+        HorizontalDivider(color = McColors.Outline, thickness = 1.dp)
+
         Column(
             modifier = Modifier
                 .weight(1f)
                 .verticalScroll(rememberScrollState())
         ) {
-            McSidebarItem(
-                selected = inLauncherScreen,
+            McSideRow(
+                selected = inNews,
+                painter = painterResource(R.drawable.ic_article_outlined),
+                label = stringResource(R.string.mc_sidebar_news),
+                onClick = toNewsScreen
+            )
+            McSideRow(
+                selected = inJavaEdition,
                 painter = painterResource(R.drawable.ic_play_arrow_filled),
-                label = stringResource(R.string.main_launch_game),
-                onClick = { if (!inLauncherScreen) toMainScreen() }
-            )
-            McSidebarItem(
-                selected = inVersions,
-                painter = painterResource(R.drawable.ic_folder_zip_filled),
-                label = stringResource(R.string.page_title_version_list),
-                onClick = { if (!inVersions) toVersionsScreen() }
-            )
-            McSidebarItem(
-                selected = inAccounts,
-                painter = painterResource(R.drawable.ic_person_filled),
-                label = stringResource(R.string.page_title_account_list),
-                onClick = { if (!inAccounts) toAccountScreen() }
-            )
-            McSidebarItem(
-                selected = inDownload,
-                painter = painterResource(R.drawable.ic_download_2_filled),
-                label = stringResource(R.string.generic_download),
-                onClick = { if (!inDownload) toDownloadScreen() }
-            )
-            McSidebarItem(
-                selected = inMultiplayer,
-                painter = painterResource(R.drawable.ic_group_filled),
-                label = stringResource(R.string.terracotta),
-                onClick = { if (!inMultiplayer) toMultiplayerScreen() }
-            )
-            McSidebarItem(
-                selected = inSettings,
-                painter = painterResource(R.drawable.ic_settings_filled),
-                label = stringResource(R.string.generic_setting),
-                onClick = { if (!inSettings) toSettingsScreen() }
+                label = stringResource(R.string.mc_sidebar_java_edition),
+                subtitle = stringResource(R.string.mc_sidebar_minecraft),
+                onClick = toJavaEdition
             )
         }
 
         HorizontalDivider(color = McColors.Outline, thickness = 1.dp)
-        McSidebarItem(
-            selected = false,
-            painter = painterResource(R.drawable.ic_folder_filled),
-            label = stringResource(R.string.files_browse_folder),
-            onClick = openFileManager
+        McSideRow(
+            selected = inSettings,
+            painter = painterResource(R.drawable.ic_settings_filled),
+            label = stringResource(R.string.generic_setting),
+            onClick = toSettingsScreen
+        )
+    }
+}
+
+@Composable
+private fun McSideRow(
+    selected: Boolean,
+    painter: androidx.compose.ui.graphics.painter.Painter,
+    label: String,
+    onClick: () -> Unit,
+    subtitle: String? = null,
+) {
+    val color = if (selected) McColors.TextPrimary else McColors.TextSecondary
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(if (selected) McColors.Panel else Color.Transparent)
+            .drawBehind {
+                if (selected) {
+                    drawRect(
+                        color = McColors.PlayGreenLight,
+                        size = androidx.compose.ui.geometry.Size(3.dp.toPx(), size.height)
+                    )
+                }
+            }
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Icon(
+            modifier = Modifier.size(24.dp),
+            painter = painter,
+            tint = color,
+            contentDescription = null
+        )
+        Column {
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    color = McColors.TextMuted,
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1
+                )
+            }
+            Text(
+                text = label,
+                color = color,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+/**
+ * Header của mục Java Edition: dòng "MINECRAFT: JAVA EDITION" + tab Play / Installations / Skins / Patch notes,
+ * kèm các nút phụ (Download, Multiplayer, Files, tiến trình tác vụ) ở bên phải.
+ */
+@Composable
+private fun McJavaHeader(
+    inPlay: Boolean,
+    inInstallations: Boolean,
+    inSkins: Boolean,
+    inPatchNotes: Boolean,
+    showTaskChip: Boolean,
+    toPlay: () -> Unit,
+    toInstallations: () -> Unit,
+    toSkins: () -> Unit,
+    toPatchNotes: () -> Unit,
+    toDownload: () -> Unit,
+    toMultiplayer: () -> Unit,
+    openFileManager: () -> Unit,
+    changeExpandedState: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier.background(McColors.Background)) {
+        Text(
+            modifier = Modifier.padding(start = 16.dp, top = 10.dp),
+            text = stringResource(R.string.mc_header_title),
+            color = McColors.TextSecondary,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.sp
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(40.dp)
+                .padding(start = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .horizontalScroll(rememberScrollState())
+            ) {
+                McHeaderTab(stringResource(R.string.mc_tab_play), inPlay, toPlay)
+                McHeaderTab(stringResource(R.string.mc_tab_installations), inInstallations, toInstallations)
+                McHeaderTab(stringResource(R.string.mc_tab_skins), inSkins, toSkins)
+                McHeaderTab(stringResource(R.string.mc_tab_patch_notes), inPatchNotes, toPatchNotes)
+            }
+
+            AnimatedVisibility(visible = showTaskChip) {
+                IconButton(onClick = changeExpandedState) {
+                    Icon(
+                        modifier = Modifier.size(22.dp),
+                        painter = painterResource(R.drawable.ic_assignment_filled),
+                        tint = McColors.PlayGreenLight,
+                        contentDescription = stringResource(R.string.main_task_menu)
+                    )
+                }
+            }
+            IconButton(onClick = toDownload) {
+                Icon(
+                    modifier = Modifier.size(22.dp),
+                    painter = painterResource(R.drawable.ic_download_2_filled),
+                    tint = McColors.TextSecondary,
+                    contentDescription = stringResource(R.string.generic_download)
+                )
+            }
+            IconButton(onClick = toMultiplayer) {
+                Icon(
+                    modifier = Modifier.size(22.dp),
+                    painter = painterResource(R.drawable.ic_group_filled),
+                    tint = McColors.TextSecondary,
+                    contentDescription = stringResource(R.string.terracotta)
+                )
+            }
+            IconButton(onClick = openFileManager) {
+                Icon(
+                    modifier = Modifier.size(22.dp),
+                    painter = painterResource(R.drawable.ic_folder_filled),
+                    tint = McColors.TextSecondary,
+                    contentDescription = stringResource(R.string.files_browse_folder)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun McHeaderTab(text: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxHeight()
+            .clickable(onClick = onClick)
+            .drawBehind {
+                if (selected) {
+                    drawRect(
+                        color = McColors.PlayGreenLight,
+                        topLeft = Offset(10.dp.toPx(), size.height - 3.dp.toPx()),
+                        size = androidx.compose.ui.geometry.Size(size.width - 20.dp.toPx(), 3.dp.toPx())
+                    )
+                }
+            }
+            .padding(horizontal = 14.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            color = if (selected) McColors.TextPrimary else McColors.TextSecondary,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            maxLines = 1
         )
     }
 }
