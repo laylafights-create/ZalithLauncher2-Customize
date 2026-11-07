@@ -2,12 +2,14 @@
 
 use glam::{Mat3, Quat, Vec2, Vec3};
 
-use crate::clip_data::{Clip, Joint, CLIP_FPS, CLIP_IDLE};
-use crate::clip_fun::ALL_SUBS;
+use crate::clip_data::{Clip, Joint, CLIP_FPS};
+use crate::clip_fun::{ALL_SUBS, IDLE_LIVE};
 use crate::pose::{flip_quat, ARM_REST_PIVOTS, LEG_REST_PIVOTS};
 
 /// 随机子动画触发间隔（秒）
 pub(crate) const SUB_INTERVAL: f32 = 8.0;
+/// Khoảng nghỉ giữa các emote sau khi đã phát một cái (nghịch ngợm hơn lần đầu)
+pub(crate) const REPEAT_INTERVAL: f32 = 4.0;
 /// 点击反应剪辑的播放时长（截取自 0.83 秒的完整数据）
 pub(crate) const INTERACT_DURATION: f32 = 0.5;
 
@@ -179,7 +181,7 @@ impl IdleClips {
 
     /// 基础循环推进一帧
     pub(crate) fn advance_base(&mut self, dt: f32, speed: f32) {
-        self.base_time = (self.base_time + (dt * speed).min(0.05)) % clip_duration(&CLIP_IDLE);
+        self.base_time = (self.base_time + (dt * speed).min(0.05)) % clip_duration(&IDLE_LIVE);
     }
 
     pub(crate) fn tick(&mut self, dt: f32, speed: f32) -> Option<usize> {
@@ -199,6 +201,12 @@ impl IdleClips {
         self.base_time = 0.;
         self.countdown = SUB_INTERVAL;
         self.last_sub = None;
+    }
+
+    /// Sau khi một emote ngẫu nhiên phát xong: chờ ngắn hơn để nhân vật hay nghịch hơn
+    pub(crate) fn rebase_after_emote(&mut self) {
+        self.base_time = 0.;
+        self.countdown = REPEAT_INTERVAL;
     }
 
     /// 一次性动作播完后的回归

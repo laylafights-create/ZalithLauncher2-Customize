@@ -24,6 +24,9 @@ pub struct AnimFrame {
     pub body_pos: Vec3,
     /// 头部位置增量（仅 y）。
     pub head_pos: f32,
+    /// Nhấc chân khỏi mặt đất (pixel, dương = lên) [trái, phải]: chân đang vung tới sẽ nhấc lên,
+    /// chân chống chạm đất dứt khoát. Chỉ tác động lên trục y của chân.
+    pub leg_lift: [f32; 2],
     /// 披风欧拉 x。
     pub cape_x: f32,
     /// 披风欧拉 z。
@@ -58,6 +61,7 @@ impl Default for AnimFrame {
             legs: [Vec3::ZERO; 2],
             body_pos: Vec3::ZERO,
             head_pos: 0.,
+            leg_lift: [0.; 2],
             cape_x: 0.,
             cape_z: Some(0.),
         }
@@ -75,31 +79,42 @@ pub(crate) fn evaluate_walking(t: f32) -> AnimFrame {
 
 /// Dáng đi tự nhiên, phát triển từ WalkingAnimation của skinview3d
 /// (https://github.com/bs-community/skinview3d/blob/9b8d22d/src/animation.ts#L153).
-/// Thêm so với bản gốc: nhấp nhô theo bước, thân xoay ngược chiều hông, đầu giữ thăng bằng,
-/// tay đánh trễ pha so với chân, chân có hài bậc ba (chạm đất dứt khoát), cape bay lệch pha.
-/// Mọi thành phần của tay/chân đều tuần hoàn 2π theo pha t để khớp WALKING_PERIOD.
+/// Bản nâng cấp (hướng tới độ chỉn chu kiểu Essential):
+///  - nhấp nhô theo bước, nhún sâu hơn ở lúc chân chạm đất (contact) và cao nhất lúc chân chống thẳng (passing);
+///  - chân vung tới được nhấc lên (leg_lift) rồi đặt xuống dứt khoát, chân hài bậc ba cho cú chạm gót;
+///  - thân nghiêng nhẹ về trước, xoay ngược chiều hông, nghiêng ngang theo chân chống (roll);
+///  - tay đánh trễ pha so với chân (follow-through), khuỷu "mềm" nhờ hài bậc hai, vai nhún nhẹ;
+///  - đầu giữ thăng bằng (ngược chiều thân) và gật nhẹ theo nhịp bước;
+///  - cape bay lệch pha, hất lên khi bước mạnh.
+/// Mọi thành phần của tay/chân đều tuần hoàn 2π theo pha t (hoặc 2t) để khớp WALKING_PERIOD.
 /// Góc Euler theo gốc GLTF (x âm = chi vung ra trước).
 fn walking(t: f32) -> AnimFrame {
     use std::f32::consts::PI;
     const ARM_Z: f32 = PI * 0.02;
     let leg = |p: f32| -(0.55 * p.sin() + 0.08 * (3. * p).sin());
-    let arm = |p: f32| 0.52 * (p - 0.35).sin();
+    // Chân vung tới (vận tốc dương) thì nhấc lên; ^2 để chạm đất dứt khoát thay vì lướt.
+    let lift = |p: f32| 0.55 * p.cos().max(0.).powi(2);
+    // Tay trễ pha, thêm hài bậc hai để cánh tay "thả lỏng" ở cuối nhịp.
+    let arm = |p: f32| 0.52 * (p - 0.35).sin() + 0.04 * (2. * p - 0.9).sin();
     let twist = 0.07 * t.sin();
     let bounce = t.cos() * t.cos();
+    // Gật đầu theo nhịp: hai lần mỗi chu kỳ bước (mỗi lần chạm đất).
+    let nod = 0.025 * (2. * t - 0.4).cos();
     AnimFrame {
-        body_rot: Vec3::new(0.03, twist, 0.03 * t.cos()),
+        body_rot: Vec3::new(0.06 + 0.012 * (2. * t).cos(), twist, 0.045 * t.cos()),
         head_rot: Vec3::new(
-            -(t / 5.).sin() * 0.1 - 0.03 * (2. * t).cos(),
+            -(t / 5.).sin() * 0.1 - 0.03 * (2. * t).cos() - 0.03 + nod,
             (t / 4.).sin() * 0.2 - 0.6 * twist,
-            -0.02 * t.cos(),
+            -0.03 * t.cos(),
         ),
         arms: [
             Vec3::new(arm(t), 0., -(t.cos() * 0.03 + ARM_Z)),
             Vec3::new(-arm(t), 0., -((t + PI).cos() * 0.03 - ARM_Z)),
         ],
         legs: [Vec3::new(leg(t), 0., 0.), Vec3::new(leg(t + PI), 0., 0.)],
-        body_pos: Vec3::new(0.12 * t.sin(), -0.9 + 0.8 * bounce, 0.),
+        body_pos: Vec3::new(0.14 * t.sin(), -0.9 + 0.8 * bounce, 0.),
         head_pos: 0.,
+        leg_lift: [lift(t), lift(t + PI)],
         cape_x: (t / 1.5).sin() * 0.06 + PI * 0.06 + 0.05 * (2. * t - 0.9).sin(),
         cape_z: None,
     }
@@ -162,6 +177,33 @@ mod tests {
             let f = evaluate_walking(i as f32 / 60.);
             assert!(f.arms[0].z.abs() < 0.1, "{}", f.arms[0].z);
             assert!(f.arms[1].z.abs() < 0.1);
+        }
+    }
+
+    /// Chân nhấc lên luôn hữu hạn, không âm, chỉ một chân nhấc tại một thời điểm (chân kia chống).
+    #[test]
+    fn walking_lifts_one_foot_at_a_time() {
+        let mut max_lift: f32 = 0.;
+        for i in 0..480 {
+            let f = evaluate_walking(i as f32 / 60.);
+            assert!(f.leg_lift[0] >= 0. && f.leg_lift[1] >= 0.);
+            assert!(f.leg_lift[0].is_finite() && f.leg_lift[1].is_finite());
+            assert!(f.leg_lift[0].min(f.leg_lift[1]) < 1e-4, "both feet lifted at {i}");
+            max_lift = max_lift.max(f.leg_lift[0]).max(f.leg_lift[1]);
+        }
+        assert!(max_lift > 0.3 && max_lift < 0.7, "max lift {max_lift}");
+    }
+
+    /// Nhấc chân không được làm bước chân giật: chênh lệch giữa hai khung liên tiếp nhỏ.
+    #[test]
+    fn walking_lift_is_smooth() {
+        let mut prev = evaluate_walking(0.);
+        for i in 1..600 {
+            let f = evaluate_walking(i as f32 / 60.);
+            for j in 0..2 {
+                assert!((f.leg_lift[j] - prev.leg_lift[j]).abs() < 0.1, "lift jump at {i}");
+            }
+            prev = f;
         }
     }
 }

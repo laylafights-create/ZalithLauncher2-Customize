@@ -4,8 +4,8 @@ use glam::{EulerRot, Mat4, Quat, Vec2, Vec3};
 
 use crate::animation::{evaluate_walking, AnimFrame, AnimationId, WALKING_PERIOD};
 use crate::clip::{self, ClipPose, IdleClips};
-use crate::clip_data::{CLIP_IDLE, CLIP_INTERACT};
-use crate::clip_fun::{ALL_SUBS, CAPE_POSE};
+use crate::clip_data::CLIP_INTERACT;
+use crate::clip_fun::{ALL_SUBS, CAPE_POSE, IDLE_LIVE};
 
 /// 攻击动画时长 (20 tick/s 下的 6 tick)
 const SWING_SECONDS: f32 = 0.30;
@@ -68,6 +68,14 @@ pub fn rotation(x: f32, y: f32, z: f32) -> Quat {
 fn smooth(t: f32) -> f32 {
     let t = t.clamp(0., 1.);
     t * t * (3. - 2. * t)
+}
+
+/// Smootherstep (Perlin): đạo hàm bậc 1 và 2 đều về 0 ở hai đầu, nên chuyển cảnh giữa các
+/// animation không còn "giật nhẹ" ở điểm bắt đầu/kết thúc như smoothstep. Đối xứng qua 0.5,
+/// nên tổng trọng số của hai track crossfade vẫn bằng 1.
+fn smoother(t: f32) -> f32 {
+    let t = t.clamp(0., 1.);
+    t * t * t * (t * (t * 6. - 15.) + 10.)
 }
 
 /// 压扁脉冲包络:0.08 秒平滑下压,0.20 秒平滑回落
@@ -207,7 +215,10 @@ fn snapshot_from_frame(frame: AnimFrame, current_cape_z: f32) -> LimbSnapshot {
         arms: frame.arms.map(|e| rotation(e.x, e.y, e.z)),
         legs: frame.legs.map(|e| rotation(e.x, e.y, e.z)),
         arm_pivots: ARM_REST_PIVOTS,
-        leg_pivots: LEG_REST_PIVOTS,
+        leg_pivots: [
+            LEG_REST_PIVOTS[0] + Vec3::new(0., frame.leg_lift[0], 0.),
+            LEG_REST_PIVOTS[1] + Vec3::new(0., frame.leg_lift[1], 0.),
+        ],
         head_rot: rotation(frame.head_rot.x, frame.head_rot.y, frame.head_rot.z),
         body_rot: rotation(frame.body_rot.x, frame.body_rot.y, frame.body_rot.z),
         body_pos: frame.body_pos,
@@ -439,8 +450,10 @@ impl Skeleton {
 
     /// 播放换披风展示姿势（单臂指天）；播放中重复调用会从头重播。
     pub fn play_cape_pose(&mut self) {
+        // Phải fade cả animation nền: nếu không idle vẫn giữ trọng số 1 và trộn 50/50
+        // với tư thế này, khiến tay chỉ giơ được nửa chừng.
         for track in &mut self.tracks {
-            if track.is_oneshot() {
+            if track.is_oneshot() || track.is_base() {
                 track.target = 0.;
             }
         }
@@ -471,6 +484,7 @@ impl Skeleton {
     /// 推进所有轨道。
     fn advance(&mut self, dt: f32) {
         let mut finished = false;
+        let mut finished_emote = false;
         for track in &mut self.tracks {
             if !track.is_oneshot() {
                 continue;
@@ -479,11 +493,16 @@ impl Skeleton {
             if track.target == 1. && track.time >= track.duration {
                 track.target = 0.;
                 finished = true;
+                finished_emote |= matches!(track.source, Source::Sub(_));
             }
         }
         if finished {
             if let Some((AnimationId::Idle, ..)) = self.animation {
-                self.idle_clips.rebase();
+                if finished_emote {
+                    self.idle_clips.rebase_after_emote();
+                } else {
+                    self.idle_clips.rebase();
+                }
             }
             // 基础轨道若已在淡出完成后被回收
             let base = self
@@ -555,7 +574,7 @@ impl Skeleton {
 
     fn sample_track(&self, track: &Track, cape_z: f32) -> LimbSnapshot {
         match track.source {
-            Source::Idle => snapshot_from_pose(clip::sample(&CLIP_IDLE, self.idle_clips.base_time)),
+            Source::Idle => snapshot_from_pose(clip::sample(&IDLE_LIVE, self.idle_clips.base_time)),
             Source::Walking => snapshot_from_frame(evaluate_walking(track.time), cape_z),
             Source::Sub(index) => snapshot_from_pose(clip::sample(&ALL_SUBS[index], track.time)),
             Source::Interact => snapshot_from_pose(clip::sample(&CLIP_INTERACT, track.time)),
@@ -572,8 +591,8 @@ impl Skeleton {
             if track.weight <= 0. {
                 continue;
             }
-            // Ease-in-out cho chuyển cảnh (smoothstep đối xứng nên tổng trọng số vẫn = 1)
-            let w = smooth(track.weight);
+            // Ease-in-out cho chuyển cảnh (smootherstep đối xứng nên tổng trọng số vẫn = 1)
+            let w = smoother(track.weight);
             let pose = self.sample_track(track, cape_z);
             acc = Some(match acc {
                 None => pose,
@@ -966,6 +985,22 @@ mod tests {
     }
 
     #[test]
+    fn cape_pose_fully_replaces_base() {
+        let mut s = Skeleton::new();
+        let view = Vec2::new(450., 525.);
+        for i in 0..30 {
+            s.update(view, i as f32 / 60., 1. / 60.);
+        }
+        s.play_cape_pose();
+        for i in 0..40 {
+            s.update(view, 1. + i as f32 / 60., 1. / 60.);
+        }
+        let pose = s.tracks.iter().find(|t| t.source == Source::CapePose).unwrap();
+        assert!(pose.weight > 0.99, "pose weight {}", pose.weight);
+        assert!(!s.tracks.iter().any(|t| t.is_base() && t.weight > 0.01));
+    }
+
+    #[test]
     fn emote_play_and_cancel() {
         let mut s = Skeleton::new();
         let view = Vec2::new(450., 525.);
@@ -1310,7 +1345,7 @@ mod tests {
     fn base_idle_time_wraps_for_looping() {
         let mut s = Skeleton::new();
         let view = Vec2::new(450., 525.);
-        let duration = clip::clip_duration(&CLIP_IDLE);
+        let duration = clip::clip_duration(&IDLE_LIVE);
         // 覆盖多轮循环与子动画穿插:基础采样时间必须始终落在循环长度内
         let mut now = 0.;
         for _ in 0..400 {
