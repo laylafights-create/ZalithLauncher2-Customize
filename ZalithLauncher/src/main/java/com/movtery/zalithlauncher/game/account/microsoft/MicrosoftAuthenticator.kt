@@ -99,19 +99,45 @@ const val XSTS_AUTH_URL = "https://xsts.auth.xboxlive.com"
 const val MINECRAFT_SERVICES_URL = "https://api.minecraftservices.com"
 
 /**
+ * client_id 为空时，Microsoft 会直接返回 400，这里提前给出明确的错误
+ */
+private fun requireClientId() {
+    if (BuildKeys.OAUTH_CLIENT_ID.isBlank()) {
+        throw IllegalStateException("OAUTH_CLIENT_ID is empty, the Azure app client id was not set at build time")
+    }
+}
+
+/**
+ * 把只有状态码的 HTTP 异常，转换成带有服务端真实错误信息的异常，并写入日志
+ */
+private suspend fun ResponseException.withBody(step: String): Exception {
+    val body = runCatching { response.safeBodyAsText() }.getOrNull().orEmpty().take(500)
+    Logger.error(TAG, "$step failed: HTTP ${response.status.value}, body = $body", this)
+    val detail = runCatching {
+        GLOBAL_JSON.decodeFromString<JsonObject>(body)["error_description"]?.jsonPrimitive?.content
+    }.getOrNull() ?: body
+    return Exception("($step) HTTP ${response.status.value}: $detail".trim(), this)
+}
+
+/**
  * 从 Microsoft 身份验证终端节点获取设备代码响应
  * 设备代码用于在单独的设备或浏览器上授权用户
  */
 suspend fun fetchDeviceCodeResponse(context: CoroutineContext): DeviceCodeResponse = coroutineScope {
-    withRetry {
-        submitForm(
-            url = "$MICROSOFT_AUTH_URL$TENANT/oauth2/v2.0/devicecode",
-            parameters = Parameters.build {
-                append("client_id", BuildKeys.OAUTH_CLIENT_ID)
-                append("scope", SCOPES.joinToString(" "))
-            },
-            context = context
-        )
+    requireClientId()
+    try {
+        withRetry {
+            submitForm<DeviceCodeResponse>(
+                url = "$MICROSOFT_AUTH_URL$TENANT/oauth2/v2.0/devicecode",
+                parameters = Parameters.build {
+                    append("client_id", BuildKeys.OAUTH_CLIENT_ID)
+                    append("scope", SCOPES.joinToString(" "))
+                },
+                context = context
+            )
+        }
+    } catch (e: ClientRequestException) {
+        throw e.withBody("devicecode")
     }
 }
 
@@ -287,11 +313,12 @@ private suspend fun refreshAccessToken(
     return withRetry {
         try {
             val response = submitForm<JsonObject>(
-                url = "$LIVE_AUTH_URL/oauth20_token.srf",
+                url = "$MICROSOFT_AUTH_URL$TENANT/oauth2/v2.0/token",
                 parameters = Parameters.build {
                     append("client_id", BuildKeys.OAUTH_CLIENT_ID)
                     append("refresh_token", refreshToken)
                     append("grant_type", "refresh_token")
+                    append("scope", SCOPES.joinToString(" "))
                 },
                 context = context
             )
@@ -302,7 +329,7 @@ private suspend fun refreshAccessToken(
         } catch (e: ClientRequestException) {
             //刷新令牌已被撤销或失效，无法自动恢复
             if (e.errorCode() == "invalid_grant") throw CredentialsExpiredException()
-            throw e
+            throw e.withBody("refresh_token")
         }
     }
 }
@@ -344,8 +371,12 @@ private suspend fun authenticateXBL(accessToken: String, update: (AsyncStatus) -
             // https://zh.minecraft.wiki/w/Tutorial:%E7%BC%96%E5%86%99%E5%90%AF%E5%8A%A8%E5%99%A8#Xbox_Live%E8%BA%AB%E4%BB%BD%E9%AA%8C%E8%AF%81
             if (e.response.status.value == 400) {
                 Logger.warning(TAG, "XBL authentication rejected the d= prefixed RpsTicket, retrying without the prefix")
-                requestXblToken(accessToken)
-            } else throw e
+                try {
+                    requestXblToken(accessToken)
+                } catch (e2: ClientRequestException) {
+                    throw e2.withBody("xbl")
+                }
+            } else throw e.withBody("xbl")
         }
     }
 }
