@@ -228,7 +228,8 @@ private fun PlayerStage(modifier: Modifier = Modifier) {
             cape = cape,
             arm = account?.skinModelType?.toArmModel(),
             animation = PetAnimation.Idle,
-            gazeEnabled = false
+            gazeEnabled = false,
+            playful = true
         )
     }
 }

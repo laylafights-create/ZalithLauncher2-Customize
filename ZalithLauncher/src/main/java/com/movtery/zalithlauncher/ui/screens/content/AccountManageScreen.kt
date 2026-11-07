@@ -299,7 +299,7 @@ private fun AccountManageContent(
             modifier = Modifier
                 .fillMaxHeight()
                 .padding(all = 12.dp)
-                .weight(3f),
+                .weight(4f),
             currentAccount = profileUiState.currentAccount,
             actions = actions
         )
@@ -309,7 +309,7 @@ private fun AccountManageContent(
             modifier = Modifier
                 .fillMaxHeight()
                 .padding(top = 12.dp, end = 12.dp, bottom = 12.dp)
-                .weight(7f),
+                .weight(6f),
             currentAccount = profileUiState.currentAccount,
             accountOperation = operationUiState.accountOp,
             accountSkinDialogState = operationUiState.accountSkinDialogState,
@@ -368,19 +368,9 @@ private fun ActionsLayout(
             skin = skinBytes,
             cape = capeBytes,
             arm = armModel,
-            yaw = Math.toRadians(35.0).toFloat()
+            yaw = Math.toRadians(35.0).toFloat(),
+            playful = true
         )
-
-        //添加账号
-        ScalingActionButton(
-            modifier = Modifier
-                .fillMaxWidth(),
-            onClick = {
-                actions.onIntent(AccountManageIntent.UpdateLoginMenuOp(LoginMenuOperation.Login))
-            }
-        ) {
-            MarqueeText(text = stringResource(R.string.account_add_new_account))
-        }
     }
 }
 
@@ -728,7 +718,6 @@ private fun SkinPageLayout(
     actions: AccountActions
 ) {
     val ctx = rememberAnimatedContext(isVisible = isVisible)
-    val context = LocalContext.current
 
     AccountOperation(accountOperation, actions)
 
@@ -736,27 +725,6 @@ private fun SkinPageLayout(
         modifier = modifier.animated(ctx),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        if (currentAccount != null) {
-            AccountItem(
-                modifier = Modifier.fillMaxWidth(),
-                currentAccount = currentAccount,
-                account = currentAccount,
-                onSelected = {},
-                openChangeSkinDialog = {},
-                onRefreshClick = {
-                    actions.onIntent(AccountManageIntent.RefreshAccount(currentAccount))
-                },
-                onCopyUUID = {
-                    copyText(COPY_LABEL_ACCOUNT_UUID, currentAccount.profileId, context, true)
-                },
-                onDeleteClick = {
-                    actions.onIntent(
-                        AccountManageIntent.UpdateAccountOp(AccountOperation.Delete(currentAccount))
-                    )
-                }
-            )
-        }
-
         SkinCapePanel(
             modifier = Modifier
                 .fillMaxWidth()

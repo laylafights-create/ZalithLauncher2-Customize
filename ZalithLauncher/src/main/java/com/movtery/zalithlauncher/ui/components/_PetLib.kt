@@ -26,6 +26,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
+import kotlin.math.PI
+import kotlin.random.Random
 import androidx.compose.ui.Modifier
 import com.movtery.zalithlauncher.ui.theme.McModelScale
 import androidx.compose.ui.Alignment
@@ -79,6 +82,8 @@ private fun Context.loadDefaultSkin(arm: ArmModel?): ByteArray = if (arm == ArmM
  * @param dragYaw 是否响应拖拽旋转偏航
  * @param gazeEnabled 是否跟随 Activity 全局鼠标位置（窗口坐标）；
  * 独立窗口中的预览与事件泵不同坐标系，应传 false
+ * @param playful bật các hành động chờ nghịch ngợm: thỉnh thoảng nhìn quanh, xoay một vòng,
+ * lắc đầu ngó nghiêng, quay lưng rồi quay lại, đi bộ vài bước (chỉ chạy khi không tự kéo xoay)
  */
 @Composable
 fun PetModelView(
@@ -92,6 +97,7 @@ fun PetModelView(
     tapReaction: PetTapReaction = PetTapReaction.Squash,
     dragYaw: Boolean = true,
     gazeEnabled: Boolean = true,
+    playful: Boolean = false,
 ) {
     val context = LocalContext.current
     val petController = remember {
@@ -117,6 +123,54 @@ fun PetModelView(
     }
 
     var previewBounds by remember { mutableStateOf<Rect?>(null) }
+
+    // Hành động chờ nghịch ngợm: cứ vài giây lại chọn ngẫu nhiên một trò, xong trả về trạng thái gốc
+    LaunchedEffect(petController, playful, animation, animationSpeed, yaw, gazeEnabled) {
+        if (!playful) return@LaunchedEffect
+        val rnd = Random.Default
+        delay(2500L)
+        while (true) {
+            delay(rnd.nextLong(4000L, 9000L))
+            val bounds = previewBounds
+            val canWalk = animation != null
+            val canLook = !gazeEnabled && bounds != null
+            // 0 nhìn quanh, 1 xoay một vòng, 2 lắc đầu ngó nghiêng, 3 đi bộ vài bước, 4 quay lưng rồi quay lại
+            var pick = rnd.nextInt(5)
+            if (pick == 0 && !canLook) pick = 1
+            if (pick == 3 && !canWalk) pick = 2
+            when (pick) {
+                0 -> {
+                    val b = bounds!!
+                    repeat(rnd.nextInt(2, 4)) {
+                        petController.setGaze(
+                            Pair(rnd.nextFloat() * b.width, rnd.nextFloat() * b.height * 0.6f)
+                        )
+                        delay(rnd.nextLong(700L, 1300L))
+                    }
+                    petController.setGaze(null)
+                }
+                1 -> petController.turnYaw(yaw, yaw + (2 * PI).toFloat(), 1500L)
+                2 -> {
+                    var cur = yaw
+                    for (target in floatArrayOf(yaw + 0.6f, yaw - 0.6f, yaw + 0.5f, yaw - 0.4f, yaw)) {
+                        petController.turnYaw(cur, target, 280L)
+                        cur = target
+                    }
+                }
+                3 -> {
+                    petController.playAnimation(PetAnimation.Walking, 1.4f)
+                    delay(2500L)
+                    petController.playAnimation(animation!!, animationSpeed)
+                }
+                4 -> {
+                    petController.turnYaw(yaw, yaw + PI.toFloat(), 700L)
+                    delay(1200L)
+                    petController.turnYaw(yaw + PI.toFloat(), yaw + (2 * PI).toFloat(), 700L)
+                }
+            }
+            petController.setModelYaw(yaw)
+        }
+    }
     DisposableEffect(petController, gazeEnabled) {
         if (!gazeEnabled) {
             onDispose { }
@@ -148,5 +202,16 @@ fun PetModelView(
             tapReaction = tapReaction,
             dragYaw = dragYaw
         )
+    }
+}
+
+/** Xoay mượt từ góc [from] đến [to] (radian) trong [durationMs] mili giây. */
+private suspend fun PetController.turnYaw(from: Float, to: Float, durationMs: Long) {
+    val steps = (durationMs / 16L).toInt().coerceAtLeast(1)
+    for (i in 1..steps) {
+        val t = i / steps.toFloat()
+        val eased = t * t * (3f - 2f * t)
+        setModelYaw(from + (to - from) * eased)
+        delay(16L)
     }
 }
