@@ -72,3 +72,16 @@ Chạy `cargo test` trong `PetLib/rust` để xác nhận.
 - **Không đơ khi giữ cúi** (4,55 – 5,1s): thân, đầu, body_y và cape đung đưa nhẹ theo nhịp thở (`bowwin`).
 - **Cape** hất ra theo quán tính khi thân gập (4,3s) và khi đứng dậy (5,2s), roll lắc nhẹ hai bên, lắng bằng lò xo cũ (omega 10, zeta 0,34). Vẫn chỉ dùng sway âm nên cape.x ≥ ~6°.
 - Chạm chân lúc 4,3s có rung tắt dần rất nhẹ (`impact`). Bước nhảy tối đa mỗi khung sau 3,3s ≤ 12° (tay phải lúc hạ từ trên trời), các khớp còn lại ≤ 6,5°.
+
+### v4.2: quay người về mặt trước rồi mới cúi chào
+- Trước đây nhân vật quay lưng suốt clip và chỉ xoay lại lúc 4,9s (nên cúi chào khi còn quay lưng). Giờ `PetController.cameraPunchTick` quay người theo smootherstep **3,2 – 4,0s** (`TURN_START`, `TURN_SECONDS`), cùng chiều với vòng xoay 360° và thêm 180°, xong trước khi thân gập (4,15s+).
+- `recenterAfterShowOff` còn lại là lưới an toàn: lúc đó đã ở mặt trước nên không xoay thêm.
+- Cape tung ra theo vòng quay (sway -42° lúc 3,55s, roll -24° rồi +14°) rồi lắng xuống; sau 4,0s cape ở sau lưng, quay lưng khỏi camera.
+- Chưa chạy được `cargo test`/build Android trong môi trường này.
+
+## Khoe cape v5: cúi sâu theo ảnh tham khảo (clip 6,3s)
+- Cúi chào **sâu ~85°** (thân gần ngang): đầu buông xuống, **tay phải áp trước ngực** (x -78°, vào trong 18°), tay trái buông thẳng xuống, **chân phải lùi ra sau và bắt chéo** qua chân trái (x +24°, z -14°), chân trái đỡ (x -8°). Hạ thấp thêm 1,2px (body_y).
+- Nhịp: quay người 3,2 – 4,0s -> hít vào 3,6 – 4,15s -> gập 4,2 – 4,9s (overshoot 88° rồi lắng 84°) -> giữ có thở 4,9 – 5,7s -> đứng dậy 5,65 – 6,3s (ngả -3° rồi về nghỉ).
+- Clip dài **6,3s** (trước 5,4s). Rust lấy thời lượng từ dữ liệu clip nên không phải sửa; Kotlin: `SHOW_OFF_ACTIVE_MILLIS` 6500 -> 7500, camera dừng ở 6,2s, đẩy camera vào 4,0 – 6,1s.
+- Cape: khi thân ngang, lưng hướng lên và cape nằm phủ trên lưng (cape.x ≥ ~7°), không chui vào thân.
+- Chưa build Android/`cargo test` được trong môi trường này.

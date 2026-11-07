@@ -54,7 +54,10 @@ private const val ACTIVE_LINGER_MILLIS = 1500L
 /** Khung cape + đuôi 0,5s + dư: luôn vẽ đủ lâu để hiệu ứng khoe cape chạy hết. */
 private const val SPIN_START = 0.78f // giây kể từ đầu khoe cape; yaw được làm mượt nên bắt đầu sớm hơn lúc rời đất một chút
 private const val SPIN_SECONDS = 0.6f
-private const val SHOW_OFF_ACTIVE_MILLIS = 6500L
+// Quay người từ lưng về mặt trước (camera) rồi mới cúi chào: bắt đầu 3,2s, xong ~4,0s, trước khi thân gập (4,2s+).
+private const val TURN_START = 3.2f
+private const val TURN_SECONDS = 0.8f
+private const val SHOW_OFF_ACTIVE_MILLIS = 7500L // clip 6,3s + đuôi 0,5s + dư
 
 /**
  * 帧间隔下限
@@ -179,6 +182,8 @@ class PetController(
     // vốn làm vòng xoay bị giật nhịp). Mỗi khung chỉ tăng vài độ nên setYaw (đi đường ngắn nhất) không bao giờ đảo chiều.
     private var spinBase = 0f
     private var spinDone = true
+    private var turnFrom = 0f
+    private var turnDone = true
 
     private fun smootherstep(x: Float): Float {
         val c = x.coerceIn(0f, 1f)
@@ -187,7 +192,7 @@ class PetController(
 
     /**
      * Độ phóng thêm (tỉ lệ) của camera theo thời gian t (giây) kể từ đầu khoe cape:
-     * đẩy nhẹ vào lúc tạo dáng, nảy mạnh khi tiếp đất (~1,55s), rồi đẩy chậm vào lúc cúi chào quý tộc (3,8 – 5,2s).
+     * đẩy nhẹ vào lúc tạo dáng, nảy mạnh khi tiếp đất (~1,55s), rồi đẩy chậm vào lúc cúi sâu chào (4,0 – 6,1s).
      */
     private fun cameraPunch(t: Float): Float {
         fun bump(t0: Float, amp: Float, decay: Float, hz: Float): Float {
@@ -197,8 +202,8 @@ class PetController(
             return amp * ramp * exp(-d / decay) * (0.65f + 0.35f * sin(2f * Math.PI.toFloat() * hz * d + 1.57f))
         }
         val push = if (t in 1.8f..3.4f) 0.05f * sin(((t - 1.8f) / 1.6f) * Math.PI.toFloat()) else 0f
-        // Màn cúi chào quý tộc (3,8 – 5,2s): đẩy camera vào chậm, không nảy mạnh.
-        val bow = if (t in 3.8f..5.2f) 0.06f * sin(((t - 3.8f) / 1.4f) * Math.PI.toFloat()) else 0f
+        // Màn cúi sâu (4,0 – 6,1s): đẩy camera vào chậm rồi trả lại, không nảy mạnh.
+        val bow = if (t in 4.0f..6.1f) 0.07f * sin(((t - 4.0f) / 2.1f) * Math.PI.toFloat()) else 0f
         return push + bump(1.55f, 0.13f, 0.22f, 3.5f) + bow
     }
 
@@ -206,7 +211,7 @@ class PetController(
         override fun run() {
             if (!punching || released) return
             val t = (SystemClock.uptimeMillis() - punchStartMs) / 1000f
-            if (t > 5.2f) {
+            if (t > 6.2f) {
                 punching = false
                 PetLibNative.nativeSetZoom(ptr, baseZoom)
                 return
@@ -217,6 +222,14 @@ class PetController(
                 yawTarget = yaw
                 PetLibNative.nativeSetYaw(ptr, yaw)
                 if (k >= 1f) spinDone = true
+            }
+            // Sau khi đứng xong tạo dáng: quay người theo smootherstep (cùng chiều vòng xoay, thêm 180°) về mặt trước.
+            if (spinDone && !turnDone && t >= TURN_START) {
+                val k = smootherstep((t - TURN_START) / TURN_SECONDS)
+                val yaw = turnFrom + PI.toFloat() * k
+                yawTarget = yaw
+                PetLibNative.nativeSetYaw(ptr, yaw)
+                if (k >= 1f) turnDone = true
             }
             PetLibNative.nativeSetZoom(ptr, baseZoom * (1f + cameraPunch(t)))
             handler.postDelayed(this, 16L)
@@ -240,9 +253,9 @@ class PetController(
     }
 
     /**
-     * Khoe cape ("anh hùng ra mắt", ~5,4s): xoay lưng, bật cao giơ tay lên trời và xoay 360° trên không,
-     * tiếp đất, tạo dáng, màn kết giật cape rồi bung tung, rồi quay lại. Gọi trên luồng render.
-     * Tay hạ xong khoảng 5,2s; mặc định xoay lại lúc 4,9s để mượt.
+     * Khoe cape ("anh hùng ra mắt", ~6,3s): xoay lưng, bật cao giơ tay lên trời và xoay 360° trên không,
+     * tiếp đất, tạo dáng, rồi QUAY NGƯỜI về mặt trước (3,2 – 4,0s) và cúi sâu chào (~85°). Gọi trên luồng render.
+     * Tay hạ xong khoảng 6,2s. [recenterAfterShowOff] ở cuối chỉ còn là lưới an toàn (đã ở mặt trước nên không xoay thêm).
      */
     private fun showOffCape(holdMillis: Long) {
         cancelShowOffCallbacks()
@@ -254,9 +267,12 @@ class PetController(
         PetLibNative.nativePlayCapePose(ptr)
         spinBase = next
         spinDone = false
+        // Sau vòng xoay 360° cape vẫn quay lưng về camera: turnFrom = lưng + 2π, quay thêm π để về mặt trước.
+        turnFrom = next + 2f * PI.toFloat()
+        turnDone = false
         startCameraPunch()
         markActive(maxOf(SHOW_OFF_ACTIVE_MILLIS, holdMillis + ACTIVE_LINGER_MILLIS))
-        // Màn kết xong ~4,6s; quay lại lúc holdMillis (tối thiểu 4,3s)
+        // Quay về mặt trước đã do cameraPunchTick làm lúc 3,2 – 4,0s; recenter ở đây chỉ là lưới an toàn
         handler.postDelayed(recenterAfterShowOff, maxOf(holdMillis, 4300L))
     }
 
