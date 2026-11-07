@@ -406,12 +406,6 @@ private fun MinecraftSidebar(
                 onClick = toDownload
             )
             McSideRow(
-                selected = inMultiplayer,
-                painter = painterResource(R.drawable.ic_group_filled),
-                label = stringResource(R.string.terracotta),
-                onClick = toMultiplayer
-            )
-            McSideRow(
                 selected = false,
                 painter = painterResource(R.drawable.ic_folder_filled),
                 label = stringResource(R.string.files_browse_folder),

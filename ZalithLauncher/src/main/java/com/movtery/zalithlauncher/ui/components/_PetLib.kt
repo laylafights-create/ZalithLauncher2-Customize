@@ -27,6 +27,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import com.movtery.zalithlauncher.ui.theme.McModelScale
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -131,10 +136,17 @@ fun PetModelView(
         }
     }
 
-    PetPreview(
-        controller = petController,
-        modifier = modifier.onGloballyPositioned { previewBounds = it.boundsInWindow() },
-        tapReaction = tapReaction,
-        dragYaw = dragYaw
-    )
+    McModelScale.load(context)
+    val modelScale = McModelScale.scale
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        PetPreview(
+            controller = petController,
+            modifier = Modifier
+                .fillMaxWidth(modelScale.coerceAtMost(1f))
+                .fillMaxHeight(modelScale.coerceAtMost(1f))
+                .onGloballyPositioned { previewBounds = it.boundsInWindow() },
+            tapReaction = tapReaction,
+            dragYaw = dragYaw
+        )
+    }
 }

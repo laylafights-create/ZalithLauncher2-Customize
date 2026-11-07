@@ -71,6 +71,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
+import com.movtery.zalithlauncher.ui.screens.content.elements.VersionIconImage
+import androidx.compose.foundation.layout.Spacer
+import com.movtery.zalithlauncher.ui.theme.McStageBackground
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.res.painterResource
@@ -184,18 +188,38 @@ private fun PlayerStage(modifier: Modifier = Modifier) {
         }
     }
 
+    McStageBackground.load(context)
+    val bgIndex = McStageBackground.selected
+    val customVer = McStageBackground.customVersion
+    val customBitmap by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, bgIndex, customVer) {
+        value = if (bgIndex == McStageBackground.CUSTOM) {
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    val file = McStageBackground.customFile(context)
+                    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    android.graphics.BitmapFactory.decodeFile(file.absolutePath, bounds)
+                    var sample = 1
+                    while (bounds.outWidth / sample > 2400 || bounds.outHeight / sample > 2400) sample *= 2
+                    val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+                    android.graphics.BitmapFactory.decodeFile(file.absolutePath, opts)?.asImageBitmap()
+                }.getOrNull()
+            }
+        } else null
+    }
+    val presetColors = McStageBackground.presets.getOrElse(bgIndex) { McStageBackground.presets[0] }
+
     Box(
-        modifier = modifier.background(
-            Brush.verticalGradient(
-                colors = listOf(
-                    Color(0xFF2E1410),
-                    Color(0xFF7A2E16),
-                    Color(0xFF3A1711)
-                )
-            )
-        ),
+        modifier = modifier.background(Brush.verticalGradient(colors = presetColors)),
         contentAlignment = Alignment.Center
     ) {
+        customBitmap?.let { bmp ->
+            androidx.compose.foundation.Image(
+                modifier = Modifier.fillMaxSize(),
+                bitmap = bmp,
+                contentDescription = null,
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+            )
+        }
         PetModelView(
             modifier = Modifier
                 .fillMaxHeight()
@@ -250,15 +274,6 @@ private fun PlayBar(
                         toVersionManageScreen = toVersionManageScreen,
                         onInstallVersion = onInstallVersion
                     )
-                    version?.takeIf { !isRefreshing && it.isValid() }?.let { current ->
-                        IconButton(onClick = { onOpenVersionSettings(current) }) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_settings_filled),
-                                contentDescription = stringResource(R.string.versions_manage_settings),
-                                tint = McColors.TextSecondary
-                            )
-                        }
-                    }
                 }
             }
 
@@ -297,30 +312,60 @@ private fun VersionSelector(
     var showPicker by remember { mutableStateOf(false) }
 
     Box(modifier = modifier) {
-        Row(
+        McButton(
             modifier = Modifier
                 .fillMaxWidth()
-                .border(1.dp, McColors.Outline)
-                .background(McColors.Panel)
-                .clickable { showPicker = true }
-                .padding(horizontal = 10.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .height(56.dp),
+            style = McButtonStyle.Stone,
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+            onClick = { showPicker = true }
         ) {
-            Box(modifier = Modifier.weight(1f)) {
-                if (version != null) {
-                    CommonVersionInfoLayout(
-                        version = version,
-                        iconSize = 32.dp
-                    )
-                } else {
+            if (version != null) {
+                val info = remember(version) { version.getVersionInfo() }
+                val valid = remember(version) { version.isValid() }
+                VersionIconImage(
+                    modifier = Modifier.size(32.dp),
+                    version = version
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = stringResource(R.string.game_launch_no_version),
-                        color = McColors.TextSecondary,
-                        style = MaterialTheme.typography.bodyMedium,
+                        text = version.getVersionName(),
+                        color = McColors.TextPrimary,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+                    val detail = if (!valid) {
+                        stringResource(R.string.versions_manage_invalid)
+                    } else {
+                        buildList {
+                            info?.let {
+                                add(it.minecraftVersion)
+                                it.loaderInfos.forEach { l -> add("${l.loader.displayName} ${l.version}") }
+                            }
+                        }.joinToString("  ·  ")
+                    }
+                    if (detail.isNotEmpty()) {
+                        Text(
+                            text = detail,
+                            color = McColors.TextSecondary,
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
+            } else {
+                Text(
+                    modifier = Modifier.weight(1f),
+                    text = stringResource(R.string.game_launch_no_version),
+                    color = McColors.TextSecondary,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
             Icon(
                 modifier = Modifier.size(24.dp),

@@ -30,6 +30,13 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.ui.text.style.TextOverflow
+import com.movtery.zalithlauncher.ui.theme.McColors
+import com.movtery.zalithlauncher.ui.components.McButton
+import com.movtery.zalithlauncher.ui.components.McButtonStyle
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -321,9 +328,10 @@ fun AccountItem(
     }
     Surface(
         modifier = modifier.graphicsLayer(scaleY = scale.value, scaleX = scale.value),
-        color = color,
+        color = if (selected) McColors.PanelHigh else color,
         contentColor = contentColor,
-        shape = MaterialTheme.shapes.large,
+        shape = RectangleShape,
+        border = BorderStroke(1.dp, if (selected) McColors.PlayGreenLight else McColors.Outline),
         onClick = {
             if (selected || !enabled) return@Surface
             onSelected(account)
@@ -333,7 +341,6 @@ fun AccountItem(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(shape = MaterialTheme.shapes.large)
                 .padding(all = 8.dp)
         ) {
             RadioButton(
@@ -388,7 +395,7 @@ fun AccountItem(
                     DropdownMenu(
                         expanded = menuExpanded,
                         onDismissRequest = { menuExpanded = false },
-                        shape = MaterialTheme.shapes.large,
+                        shape = RectangleShape,
                     ) {
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.account_wardrobe)) },
@@ -464,14 +471,27 @@ fun LoginMenuDialog(
                     .padding(all = 6.dp)
                     .fillMaxWidth()
                     .heightIn(max = (maxHeight - 12.dp).coerceAtMost(rememberDialogMaxHeight())),
-                shape = MaterialTheme.shapes.extraLarge,
-                color = cardColor(false),
-                contentColor = onCardColor(),
-                shadowElevation = 6.dp
+                shape = RectangleShape,
+                color = McColors.Panel,
+                contentColor = McColors.TextPrimary,
+                border = BorderStroke(1.dp, McColors.Outline),
+                shadowElevation = 0.dp
             ) {
                 Column(
                     modifier = Modifier.fillMaxWidth()
                 ) {
+                    // Thanh tiêu đề tối giống Minecraft Launcher
+                    Text(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(McColors.Background)
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        text = stringResource(R.string.account_add_new_account),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = McColors.TextPrimary
+                    )
+                    HorizontalDivider(color = McColors.Outline, thickness = 1.dp)
                     Row(
                         modifier = Modifier
                             .weight(1f, fill = false)
@@ -489,6 +509,7 @@ fun LoginMenuDialog(
                             LoginItem(
                                 modifier = Modifier.fillMaxWidth(),
                                 title = stringResource(R.string.account_type_microsoft),
+                                primary = true,
                                 onClick = {
                                     onMicrosoftLogin()
                                     onDismissRequest()
@@ -553,11 +574,12 @@ fun LoginMenuDialog(
                         }
                     }
 
-                    Button(
+                    McButton(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 12.dp)
-                            .padding(bottom = 8.dp),
+                            .padding(bottom = 12.dp),
+                        style = McButtonStyle.Stone,
                         onClick = onDismissRequest
                     ) {
                         Text(stringResource(R.string.generic_close))
@@ -595,14 +617,26 @@ fun LoginItem(
             contentDescription = null
         )
     },
+    primary: Boolean = false,
     onClick: () -> Unit
 ) {
-    InfoLayoutTextItem(
+    McButton(
         modifier = modifier,
-        title = title,
-        icon = icon,
+        style = if (primary) McButtonStyle.Play else McButtonStyle.Stone,
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
         onClick = onClick
-    )
+    ) {
+        Text(
+            modifier = Modifier.weight(1f),
+            text = title,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        icon()
+    }
 }
 
 @Preview(showBackground = true, widthDp = 400, heightDp = 120)

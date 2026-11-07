@@ -22,4 +22,15 @@
     <string name="mc_picker_state_download">Tải về</string>
     <string name="mc_ui_scale_title">Kích thước giao diện</string>
     <string name="mc_ui_scale_summary">Thu nhỏ hoặc phóng to toàn bộ giao diện launcher. Áp dụng khi bạn thả thanh trượt.</string>
+    <string name="mc_model_scale_title">Kích thước model nhân vật</string>
+    <string name="mc_model_scale_summary">Kích thước nhân vật 3D ở màn hình Chơi và Skin. Áp dụng khi bạn thả thanh trượt.</string>
+    <string name="mc_bg_title">Nền sau nhân vật</string>
+    <string name="mc_bg_summary">Chọn màu nền có sẵn hoặc dùng ảnh của bạn cho màn hình Chơi.</string>
+    <string name="mc_bg_nether">Nether</string>
+    <string name="mc_bg_overworld">Overworld</string>
+    <string name="mc_bg_night">Đêm</string>
+    <string name="mc_bg_forest">Rừng</string>
+    <string name="mc_bg_end">The End</string>
+    <string name="mc_bg_gray">Xám tối</string>
+    <string name="mc_bg_custom">Ảnh của bạn…</string>
 </resources>

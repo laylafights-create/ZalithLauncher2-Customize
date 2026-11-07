@@ -54,6 +54,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.foundation.layout.Spacer
+import com.movtery.zalithlauncher.ui.theme.McModelScale
+import com.movtery.zalithlauncher.ui.theme.McStageBackground
 import com.movtery.zalithlauncher.ui.theme.McUiScale
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -172,6 +174,20 @@ fun LauncherSettingsScreen(
                         onValueChange = { pendingPercent.value = it },
                         onValueChangeFinished = { McUiScale.save(context, pendingPercent.value) }
                     )
+                    val pendingModel = remember { mutableStateOf(McModelScale.percent()) }
+                    IntSliderSettingsCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        position = CardPosition.Single,
+                        value = pendingModel.value,
+                        title = stringResource(R.string.mc_model_scale_title),
+                        summary = stringResource(R.string.mc_model_scale_summary),
+                        valueRange = McModelScale.MIN_PERCENT.toFloat()..McModelScale.MAX_PERCENT.toFloat(),
+                        suffix = "%",
+                        fineTuningControl = true,
+                        onValueChange = { pendingModel.value = it },
+                        onValueChangeFinished = { McModelScale.save(context, pendingModel.value) }
+                    )
+                    StageBackgroundCard(modifier = Modifier.fillMaxWidth())
                 }
             }
             Spacer(modifier = Modifier.height(12.dp))
@@ -791,6 +807,61 @@ private fun BackgroundOperation(
             LaunchedEffect(Unit) {
                 backgroundViewModel.delete()
                 changeOperation(BackgroundOperation.None)
+            }
+        }
+    }
+}
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun StageBackgroundCard(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    McStageBackground.load(context)
+    val selected = McStageBackground.selected
+    val names = listOf(
+        R.string.mc_bg_nether, R.string.mc_bg_overworld, R.string.mc_bg_night,
+        R.string.mc_bg_forest, R.string.mc_bg_end, R.string.mc_bg_gray
+    )
+    val picker = rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) McStageBackground.setCustom(context, uri)
+    }
+
+    SettingsCard(modifier = modifier, position = CardPosition.Single) {
+        androidx.compose.foundation.layout.Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(all = 16.dp),
+            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp)
+        ) {
+            com.movtery.zalithlauncher.ui.components.TitleAndSummary(
+                title = stringResource(R.string.mc_bg_title),
+                summary = stringResource(R.string.mc_bg_summary)
+            )
+            androidx.compose.foundation.layout.FlowRow(
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)
+            ) {
+                names.forEachIndexed { index, res ->
+                    com.movtery.zalithlauncher.ui.components.McButton(
+                        onClick = { McStageBackground.select(context, index) },
+                        style = if (selected == index)
+                            com.movtery.zalithlauncher.ui.components.McButtonStyle.Play
+                        else com.movtery.zalithlauncher.ui.components.McButtonStyle.Stone,
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        androidx.compose.material3.Text(stringResource(res))
+                    }
+                }
+                com.movtery.zalithlauncher.ui.components.McButton(
+                    onClick = { picker.launch("image/*") },
+                    style = if (selected == McStageBackground.CUSTOM)
+                        com.movtery.zalithlauncher.ui.components.McButtonStyle.Play
+                    else com.movtery.zalithlauncher.ui.components.McButtonStyle.Stone,
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    androidx.compose.material3.Text(stringResource(R.string.mc_bg_custom))
+                }
             }
         }
     }
