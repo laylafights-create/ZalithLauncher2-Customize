@@ -66,6 +66,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -306,7 +307,7 @@ fun MainScreen(
                         )
                     }
 
-                    AnimatedVisibility(
+                    androidx.compose.animation.AnimatedVisibility(
                         visible = !sidebarOpen,
                         modifier = Modifier.align(Alignment.TopStart),
                         enter = fadeIn(tween(160)),
@@ -350,7 +351,8 @@ private const val NEWS_URL = "https://www.minecraft.net/en-us/articles"
 private const val PATCH_NOTES_URL = "https://feedback.minecraft.net/hc/en-us/sections/360001186971-Release-Changelogs"
 
 /**
- * Thanh bên giống Minecraft Launcher: tài khoản ở đầu, News, Java Edition, Settings ở cuối.
+ * Thanh bên: thẻ tài khoản ở đầu, nhóm điều hướng chính ở giữa, Settings ghim ở cuối.
+ * Mục đang chọn có nền sáng + vạch xanh trượt ra từ giữa, icon sáng lên (đều chạy ở pha draw).
  */
 @Composable
 private fun MinecraftSidebar(
@@ -371,85 +373,51 @@ private fun MinecraftSidebar(
 ) {
     val account by AccountsManager.currentAccountFlow.collectAsStateWithLifecycle()
 
-    Column(modifier = modifier.background(McColors.Background)) {
-        // Tài khoản đang dùng (bấm để mở danh sách tài khoản)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(onClick = toAccountScreen)
-                .padding(horizontal = 12.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            val acc = account
-            if (acc != null) {
-                PlayerFace(account = acc, avatarSize = 32.dp)
-            } else {
-                Icon(
-                    modifier = Modifier.size(32.dp),
-                    painter = painterResource(R.drawable.ic_person_filled),
-                    tint = McColors.TextSecondary,
-                    contentDescription = null
-                )
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = acc?.username ?: stringResource(R.string.account_add_new_account),
-                    color = McColors.TextPrimary,
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                if (acc != null) {
-                    Text(
-                        text = getAccountTypeName(acc),
-                        color = McColors.TextMuted,
-                        style = MaterialTheme.typography.labelSmall,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-            Icon(
-                modifier = Modifier.size(20.dp),
-                painter = painterResource(R.drawable.ic_arrow_drop_down_rounded),
-                tint = McColors.TextSecondary,
-                contentDescription = null
-            )
-        }
-        HorizontalDivider(color = McColors.Outline, thickness = 1.dp)
+    Column(
+        modifier = modifier
+            .background(McColors.Background)
+            .padding(horizontal = 8.dp, vertical = 8.dp)
+    ) {
+        SidebarAccountCard(
+            account = account,
+            selected = inAccounts,
+            onClick = toAccountScreen
+        )
+
+        androidx.compose.foundation.layout.Spacer(Modifier.height(10.dp))
 
         Column(
             modifier = Modifier
                 .weight(1f)
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-            McSideRow(
+            SidebarItem(
                 selected = inNews,
                 painter = painterResource(R.drawable.ic_article_outlined),
                 label = stringResource(R.string.mc_sidebar_news),
                 onClick = toNewsScreen
             )
-            McSideRow(
+            SidebarItem(
                 selected = inJavaEdition,
                 painter = painterResource(R.drawable.ic_play_arrow_filled),
                 label = stringResource(R.string.mc_sidebar_java_edition),
                 subtitle = stringResource(R.string.mc_sidebar_minecraft),
+                accent = true,
                 onClick = toJavaEdition
             )
             HorizontalDivider(
-                modifier = Modifier.padding(vertical = 6.dp),
-                color = McColors.Outline,
+                modifier = Modifier.padding(vertical = 8.dp, horizontal = 10.dp),
+                color = McColors.Divider.copy(alpha = 0.5f),
                 thickness = 1.dp
             )
-            McSideRow(
+            SidebarItem(
                 selected = inDownload,
                 painter = painterResource(R.drawable.ic_download_2_filled),
                 label = stringResource(R.string.generic_download),
                 onClick = toDownload
             )
-            McSideRow(
+            SidebarItem(
                 selected = false,
                 painter = painterResource(R.drawable.ic_folder_filled),
                 label = stringResource(R.string.files_browse_folder),
@@ -457,8 +425,12 @@ private fun MinecraftSidebar(
             )
         }
 
-        HorizontalDivider(color = McColors.Outline, thickness = 1.dp)
-        McSideRow(
+        HorizontalDivider(
+            modifier = Modifier.padding(vertical = 6.dp, horizontal = 10.dp),
+            color = McColors.Divider.copy(alpha = 0.5f),
+            thickness = 1.dp
+        )
+        SidebarItem(
             selected = inSettings,
             painter = painterResource(R.drawable.ic_settings_filled),
             label = stringResource(R.string.generic_setting),
@@ -468,38 +440,124 @@ private fun MinecraftSidebar(
 }
 
 @Composable
-private fun McSideRow(
+private fun SidebarAccountCard(
+    account: com.movtery.zalithlauncher.game.account.Account?,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(if (selected) McColors.PanelHigh else McColors.Panel)
+            .border(1.dp, McColors.Outline)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        if (account != null) {
+            PlayerFace(account = account, avatarSize = 36.dp)
+        } else {
+            Icon(
+                modifier = Modifier.size(36.dp),
+                painter = painterResource(R.drawable.ic_person_filled),
+                tint = McColors.TextSecondary,
+                contentDescription = null
+            )
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = account?.username ?: stringResource(R.string.account_add_new_account),
+                color = McColors.TextPrimary,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (account != null) {
+                Text(
+                    text = getAccountTypeName(account),
+                    color = McColors.TextMuted,
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        Icon(
+            modifier = Modifier.size(20.dp),
+            painter = painterResource(R.drawable.ic_arrow_drop_down_rounded),
+            tint = McColors.TextSecondary,
+            contentDescription = null
+        )
+    }
+}
+
+@Composable
+private fun SidebarItem(
     selected: Boolean,
     painter: androidx.compose.ui.graphics.painter.Painter,
     label: String,
     onClick: () -> Unit,
     subtitle: String? = null,
+    accent: Boolean = false,
 ) {
-    val color = if (selected) McColors.TextPrimary else McColors.TextSecondary
+    val progress = animateFloatAsState(
+        targetValue = if (selected) 1f else 0f,
+        animationSpec = tween(200, easing = SmoothEasing),
+        label = "SidebarItemSelection"
+    )
+    val iconColor = androidx.compose.ui.graphics.lerp(
+        if (accent) McColors.PlayGreenLight else McColors.TextSecondary,
+        if (accent) McColors.PlayGreenLight else McColors.TextPrimary,
+        progress.value
+    )
+    val textColor = androidx.compose.ui.graphics.lerp(
+        McColors.TextSecondary,
+        McColors.TextPrimary,
+        progress.value
+    )
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(if (selected) McColors.Panel else Color.Transparent)
+            .heightIn(min = 48.dp)
             .drawBehind {
-                if (selected) {
+                val p = progress.value
+                if (p > 0f) {
+                    drawRect(color = McColors.Panel.copy(alpha = p), size = size)
+                    val barHeight = size.height * 0.6f * p
                     drawRect(
                         color = McColors.PlayGreenLight,
-                        size = androidx.compose.ui.geometry.Size(3.dp.toPx(), size.height)
+                        topLeft = androidx.compose.ui.geometry.Offset(0f, (size.height - barHeight) / 2f),
+                        size = androidx.compose.ui.geometry.Size(3.dp.toPx(), barHeight)
                     )
                 }
             }
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Icon(
-            modifier = Modifier.size(24.dp),
-            painter = painter,
-            tint = color,
-            contentDescription = null
-        )
-        Column {
+        // Ô icon: nền xanh nhạt hiện dần khi chọn (mục Java Edition luôn có nền nhạt)
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .drawBehind {
+                    val base = if (accent) 0.16f else 0f
+                    val alpha = base + (0.30f - base) * progress.value
+                    drawRect(color = McColors.PlayGreen.copy(alpha = alpha), size = size)
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                modifier = Modifier.size(22.dp),
+                painter = painter,
+                tint = iconColor,
+                contentDescription = null
+            )
+        }
+        Column(modifier = Modifier.weight(1f)) {
             if (subtitle != null) {
                 Text(
                     text = subtitle,
@@ -510,9 +568,9 @@ private fun McSideRow(
             }
             Text(
                 text = label,
-                color = color,
+                color = textColor,
                 style = MaterialTheme.typography.labelLarge,
-                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )

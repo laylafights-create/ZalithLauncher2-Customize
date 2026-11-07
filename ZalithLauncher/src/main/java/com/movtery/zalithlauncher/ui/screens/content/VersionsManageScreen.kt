@@ -370,7 +370,7 @@ fun VersionsManageScreen(
                     backScreenViewModel.navigateToDownload()
                 }
             )
-            AnimatedVisibility(
+            androidx.compose.animation.AnimatedVisibility(
                 visible = !menuOpen,
                 modifier = Modifier.align(Alignment.CenterStart),
                 enter = fadeIn(tween(160)),
