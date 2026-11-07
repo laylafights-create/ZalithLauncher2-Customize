@@ -187,7 +187,7 @@ class PetController(
 
     /**
      * Độ phóng thêm (tỉ lệ) của camera theo thời gian t (giây) kể từ đầu khoe cape:
-     * đẩy nhẹ vào lúc tạo dáng, nảy mạnh khi tiếp đất (~1,55s) và khi cape bung (~4,0s).
+     * đẩy nhẹ vào lúc tạo dáng, nảy mạnh khi tiếp đất (~1,55s), rồi đẩy chậm vào lúc cúi chào quý tộc (3,8 – 5,2s).
      */
     private fun cameraPunch(t: Float): Float {
         fun bump(t0: Float, amp: Float, decay: Float, hz: Float): Float {
@@ -197,7 +197,9 @@ class PetController(
             return amp * ramp * exp(-d / decay) * (0.65f + 0.35f * sin(2f * Math.PI.toFloat() * hz * d + 1.57f))
         }
         val push = if (t in 1.8f..3.4f) 0.05f * sin(((t - 1.8f) / 1.6f) * Math.PI.toFloat()) else 0f
-        return push + bump(1.55f, 0.13f, 0.22f, 3.5f) + bump(4.0f, 0.16f, 0.26f, 3.0f)
+        // Màn cúi chào quý tộc (3,8 – 5,2s): đẩy camera vào chậm, không nảy mạnh.
+        val bow = if (t in 3.8f..5.2f) 0.06f * sin(((t - 3.8f) / 1.4f) * Math.PI.toFloat()) else 0f
+        return push + bump(1.55f, 0.13f, 0.22f, 3.5f) + bow
     }
 
     private val cameraPunchTick = object : Runnable {

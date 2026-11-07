@@ -37,31 +37,11 @@ pub(crate) struct BoxPart {
     pub inflate: f32,
     pub mirror: bool,
     pub tex: Tex,
-    /// Dịch dọc (đơn vị texel, ở hệ 64 px) cho các mặt bên/trước/sau.
-    /// Dùng khi một khối được cắt thành nhiều đoạn ngang (cape mềm).
-    pub v_off: f32,
 }
 
-/// Cape được chia thành `CAPE_SEGMENTS` đoạn nối tiếp; mỗi đoạn uốn thêm một chút
-/// so với đoạn trên nên cape cong mềm thay vì xoay cứng như một tấm ván.
-const CAPE_SEGMENTS: usize = 8;
-const CAPE_HEIGHT: f32 = 16.;
-/// Độ uốn thêm mỗi đoạn theo trục X, tỉ lệ với góc cape.x (đoạn dưới cong nhiều hơn).
-const CAPE_BEND_X: f32 = 0.10;
-/// Độ uốn thêm mỗi đoạn theo trục Z (cạnh cape đung đưa nhẹ), tỉ lệ với cape.y.
-const CAPE_BEND_Z: f32 = 0.18;
-/// Độ võng tối thiểu mỗi đoạn (rad) để cape luôn hơi cong ra ở gấu, ngay cả khi cape.x ≈ 0.
-const CAPE_DRAPE: f32 = 0.008;
-
-/// Góc uốn thêm (rad) của khớp thứ `i` giữa hai đoạn cape: (quanh X cục bộ, quanh Z cục bộ).
-fn cape_bend(cape: Vec2, i: usize) -> (f32, f32) {
-    // Đoạn càng thấp càng mềm: trọng số tăng dần từ 0.6 đến 1.4.
-    let t = i as f32 / (CAPE_SEGMENTS - 1) as f32;
-    let w = 0.6 + 0.8 * t;
-    let bx = (cape.x * CAPE_BEND_X + CAPE_DRAPE) * w;
-    let bz = cape.y * CAPE_BEND_Z * w;
-    (bx, bz)
-}
+/// Góc tối thiểu (rad) giữa cape và mặt lưng, để cape không bao giờ cắm vào thân/chân
+/// khi phát hành động (cape.x < 0 sẽ làm cape nghiêng vào người).
+const CAPE_MIN_ANGLE: f32 = 0.05;
 
 pub struct SceneParams<'a> {
     pub skin: &'a Skin,
@@ -105,7 +85,6 @@ pub(crate) fn parts_into(pose: &Skeleton, scene: &SceneParams, v: &mut Vec<BoxPa
                 inflate: 0.,
                 mirror,
                 tex: Tex::Skin,
-                v_off: 0.,
             });
             if scene.outer_layer && (!skin.legacy || hat) {
                 v.push(BoxPart {
@@ -115,8 +94,7 @@ pub(crate) fn parts_into(pose: &Skeleton, scene: &SceneParams, v: &mut Vec<BoxPa
                     inflate: if hat { 1. } else { 0.5 },
                     mirror,
                     tex: Tex::Skin,
-                    v_off: 0.,
-                });
+                    });
             }
         };
         // 躯干：部件原点即盒心（skin 0,-6,0 → 模型 0,18,0），旋转绕髋部。
@@ -192,35 +170,20 @@ pub(crate) fn parts_into(pose: &Skeleton, scene: &SceneParams, v: &mut Vec<BoxPa
         }
     }
     // 披风：部件原点 (0,12,−2)（模型 0,24,−2），mesh 偏移 (0,−8,+0.5)；rotation.y 恒为 π
-    // Cape mềm: chia thành CAPE_SEGMENTS đoạn ngang nối tiếp. Đoạn 0 treo ở vai với đúng
-    // phép xoay cũ; mỗi khớp phía dưới uốn thêm một góc nhỏ nên cape cong dần về gấu.
     if scene.cape.is_some() {
-        let seg_h = CAPE_HEIGHT / CAPE_SEGMENTS as f32;
-        // Mỗi đoạn dùng đúng dải texel của nó (khối gốc: mặt trước/sau cao 16 texel).
-        let mut hinge = body_chain
-            * Mat4::from_translation(Vec3::new(0., 12., -2.))
-            * Mat4::from_quat(pose::rotation(
-                pose.cape.x,
-                std::f32::consts::PI,
-                pose.cape.y,
-            ));
-        for i in 0..CAPE_SEGMENTS {
-            v.push(BoxPart {
-                size: Vec3::new(10., seg_h, 1.),
-                uv: Vec2::ZERO,
-                transform: hinge * Mat4::from_translation(Vec3::new(0., -seg_h / 2., 0.5)),
-                inflate: 0.,
-                mirror: false,
-                tex: Tex::Cape,
-                v_off: i as f32 * seg_h,
-            });
-            // Khớp tiếp theo ở đáy đoạn này. Hệ cục bộ đã quay Y = π nên trục X cục bộ
-            // ngược với trục X cha: dùng −bx để uốn cùng chiều với cape.x.
-            let (bx, bz) = cape_bend(pose.cape, i);
-            hinge = hinge
-                * Mat4::from_translation(Vec3::new(0., -seg_h, 0.))
-                * Mat4::from_quat(pose::rotation(-bx, 0., bz));
-        }
+        // Mặt trước cape nằm trên mặt phẳng lưng (z = −2); góc < 0 sẽ cắm vào thân nên kẹp ≥ CAPE_MIN_ANGLE.
+        let cape_x = pose.cape.x.max(CAPE_MIN_ANGLE);
+        v.push(BoxPart {
+            size: Vec3::new(10., 16., 1.),
+            uv: Vec2::ZERO,
+            transform: body_chain
+                * Mat4::from_translation(Vec3::new(0., 12., -2.))
+                * Mat4::from_quat(pose::rotation(cape_x, std::f32::consts::PI, pose.cape.y))
+                * Mat4::from_translation(Vec3::new(0., -8., 0.5)),
+            inflate: 0.,
+            mirror: false,
+            tex: Tex::Cape,
+        });
     }
     // Phóng to quanh tâm khung (project() dịch gốc về y = 15 trước khi chiếu).
     let zoom = pose.zoom.clamp(0.25, 4.);
@@ -493,15 +456,14 @@ fn draw_box(band: &mut Band, b: &BoxPart, tex: &Texture, light: &Lighting) {
         let Vec3 { x: w, y: h, z: d } = b.size;
         let u = b.uv.x;
         let v = b.uv.y;
-        let vo = b.v_off;
         let regions = [
             // +X 为角色左侧。展开条带顺序为 角色-右 / 前 / 角色-左 / 后。
-            (u + d + w, v + d + vo, d, h),
-            (u, v + d + vo, d, h),
+            (u + d + w, v + d, d, h),
+            (u, v + d, d, h),
             (u + d, v, w, d),
             (u + d + w, v, w, d),
-            (u + d, v + d + vo, w, h),
-            (u + 2. * d + w, v + d + vo, w, h),
+            (u + d, v + d, w, h),
+            (u + 2. * d + w, v + d, w, h),
         ];
         let sz = b.size + Vec3::splat(b.inflate);
         let planes = [

@@ -58,3 +58,17 @@ Chạy `cargo test` trong `PetLib/rust` để xác nhận.
 - **Vòng xoay 360° liên tục**: thay 4 nấc 90° (giật nhịp) bằng yaw đi theo smootherstep 0.78→1.38s, cập nhật mỗi khung (`cameraPunchTick`).
 - Nhấn camera vào mượt (smootherstep 80ms) thay vì tuyến tính, hết "pop".
 - Clip: bỏ rung tay 8Hz (jitter ở 30fps), tăng độ trễ chồng chéo (đầu/tay/cape), lò xo mềm hơn (omega thấp, zeta cao hơn một chút), giãn nhẹ hai cú bật nhanh nhất (tay lúc bật cao, cape lúc giật) để không còn bước >35°/khung.
+
+## Khoe cape v4 (từ 3,3s: cúi chào quý tộc, cape không xuyên thân)
+- Thay màn "giật cape / bung cape" (3,3 – 4,55s) và đoạn thu về bằng **cúi chào quý tộc**: chụm chân, tay phải đặt trước ngực, tay trái ra sau lưng, chân phải bước trước / chân trái lùi sau, thân cúi ~30° (4,55 – 4,95s giữ), rồi đứng dậy về tư thế nghỉ lúc 5,4s. Mốc 5,4s giữ nguyên.
+- Quy ước góc cape trong clip: `sway` **dương = ép cape vào lưng** (cape.x giảm, dễ xuyên thân), **âm = tung ra sau**. Màn cúi chào giữ sway ≈ -2..-4 (cape.x ≥ ~7°).
+- Render (`render.rs`): `cape.x` bị kẹp ≥ `CAPE_MIN_ANGLE` (0,05 rad) nên các cú ép sát (khoảng 0,4 – 0,9s ở màn dồn lực) không còn cắm vào thân. Cape vẫn là một khối.
+- Camera (`PetController.cameraPunch`): bỏ cú nảy +16% lúc 4,0s, thay bằng đẩy chậm +6% trong 3,8 – 5,2s.
+- Chưa chạy `cargo test` (không có mạng để tải crate): nên chạy trong `PetLib/rust`.
+
+### v4.1: cúi chào mượt hơn (cùng chuẩn "đầu tư" như đoạn đầu)
+- Mỗi khớp có nhiều key hơn thay vì giữ tư thế phẳng: **anticipation** (hít vào, ngực nâng, ngả nhẹ ra sau ở 3,5 – 4,05s), **overshoot** (thân gập 34° rồi lắng 31°, đứng dậy ngả -3° rồi về 0).
+- **Overlapping**: đầu trễ nhịp cúi thêm (13°), tay trái nâng ra sau làm đối trọng, tay phải vẫy vòng ra ngoài thấp (flourish), chân phải trượt trước/chân trái lùi.
+- **Không đơ khi giữ cúi** (4,55 – 5,1s): thân, đầu, body_y và cape đung đưa nhẹ theo nhịp thở (`bowwin`).
+- **Cape** hất ra theo quán tính khi thân gập (4,3s) và khi đứng dậy (5,2s), roll lắc nhẹ hai bên, lắng bằng lò xo cũ (omega 10, zeta 0,34). Vẫn chỉ dùng sway âm nên cape.x ≥ ~6°.
+- Chạm chân lúc 4,3s có rung tắt dần rất nhẹ (`impact`). Bước nhảy tối đa mỗi khung sau 3,3s ≤ 12° (tay phải lúc hạ từ trên trời), các khớp còn lại ≤ 6,5°.
