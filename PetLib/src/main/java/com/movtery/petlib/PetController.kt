@@ -25,6 +25,7 @@ import android.graphics.PorterDuffXfermode
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.view.Choreographer
 import android.view.Surface
@@ -35,6 +36,8 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.PI
+import kotlin.math.exp
+import kotlin.math.sin
 
 private const val TAG = "PetLib"
 
@@ -49,6 +52,8 @@ private const val SURFACE_FAILURE_LIMIT = 10
 private const val ACTIVE_LINGER_MILLIS = 1500L
 
 /** Khung cape + đuôi 0,5s + dư: luôn vẽ đủ lâu để hiệu ứng khoe cape chạy hết. */
+private const val SPIN_START = 0.78f // giây kể từ đầu khoe cape; yaw được làm mượt nên bắt đầu sớm hơn lúc rời đất một chút
+private const val SPIN_SECONDS = 0.6f
 private const val SHOW_OFF_ACTIVE_MILLIS = 6500L
 
 /**
@@ -96,6 +101,11 @@ class PetController(
     // 偏航目标角的调用侧镜像，供增量旋转直接累加
     @Volatile
     private var yawTarget = 0f
+
+    // Zoom người dùng đặt (setZoom); hiệu ứng nhấn camera của khoe cape cộng lên trên và trả về đúng giá trị này.
+    private var baseZoom = 1f
+    private var punchStartMs = 0L
+    private var punching = false
 
     private var frameCallback: Choreographer.FrameCallback? = null
     // 双缓冲：光栅写后台缓冲，提交展示前台缓冲，锁画布的等待期不再把
@@ -165,19 +175,66 @@ class PetController(
 
     private val recenterAfterShowOff = Runnable { recenterYaw() }
 
-    // Xoay trên không lúc bật cao: một vòng 360° chia 4 bước 90° (setYaw đi đường ngắn nhất nên không thể đặt +360° một lần).
-    private val leapSpinSteps = List(4) { spinStep((PI / 2).toFloat()) }
+    // Xoay trên không lúc bật cao: một vòng 360° liên tục theo đường cong smootherstep (thay cho 4 nấc 90° rời rạc
+    // vốn làm vòng xoay bị giật nhịp). Mỗi khung chỉ tăng vài độ nên setYaw (đi đường ngắn nhất) không bao giờ đảo chiều.
+    private var spinBase = 0f
+    private var spinDone = true
 
-    private fun spinStep(delta: Float) = Runnable {
-        // Cộng dồn vào yaw MỤC TIÊU (không phải yaw hiện tại đang bị làm mượt, vì nó trễ và sẽ làm hụt vòng xoay)
-        val next = yawTarget + delta
-        yawTarget = next
-        PetLibNative.nativeSetYaw(ptr, next)
+    private fun smootherstep(x: Float): Float {
+        val c = x.coerceIn(0f, 1f)
+        return c * c * c * (c * (c * 6f - 15f) + 10f)
+    }
+
+    /**
+     * Độ phóng thêm (tỉ lệ) của camera theo thời gian t (giây) kể từ đầu khoe cape:
+     * đẩy nhẹ vào lúc tạo dáng, nảy mạnh khi tiếp đất (~1,55s) và khi cape bung (~4,0s).
+     */
+    private fun cameraPunch(t: Float): Float {
+        fun bump(t0: Float, amp: Float, decay: Float, hz: Float): Float {
+            if (t < t0) return 0f
+            val d = t - t0
+            val ramp = smootherstep(d / 0.08f)
+            return amp * ramp * exp(-d / decay) * (0.65f + 0.35f * sin(2f * Math.PI.toFloat() * hz * d + 1.57f))
+        }
+        val push = if (t in 1.8f..3.4f) 0.05f * sin(((t - 1.8f) / 1.6f) * Math.PI.toFloat()) else 0f
+        return push + bump(1.55f, 0.13f, 0.22f, 3.5f) + bump(4.0f, 0.16f, 0.26f, 3.0f)
+    }
+
+    private val cameraPunchTick = object : Runnable {
+        override fun run() {
+            if (!punching || released) return
+            val t = (SystemClock.uptimeMillis() - punchStartMs) / 1000f
+            if (t > 5.2f) {
+                punching = false
+                PetLibNative.nativeSetZoom(ptr, baseZoom)
+                return
+            }
+            if (!spinDone && t >= SPIN_START) {
+                val k = smootherstep((t - SPIN_START) / SPIN_SECONDS)
+                val yaw = spinBase + 2f * PI.toFloat() * k
+                yawTarget = yaw
+                PetLibNative.nativeSetYaw(ptr, yaw)
+                if (k >= 1f) spinDone = true
+            }
+            PetLibNative.nativeSetZoom(ptr, baseZoom * (1f + cameraPunch(t)))
+            handler.postDelayed(this, 16L)
+        }
+    }
+
+    private fun startCameraPunch() {
+        punchStartMs = SystemClock.uptimeMillis()
+        punching = true
+        handler.removeCallbacks(cameraPunchTick)
+        handler.post(cameraPunchTick)
     }
 
     private fun cancelShowOffCallbacks() {
         handler.removeCallbacks(recenterAfterShowOff)
-        leapSpinSteps.forEach { handler.removeCallbacks(it) }
+        handler.removeCallbacks(cameraPunchTick)
+        if (punching) {
+            punching = false
+            if (!released) handler.post { PetLibNative.nativeSetZoom(ptr, baseZoom) }
+        }
     }
 
     /**
@@ -193,8 +250,10 @@ class PetController(
         yawTarget = next
         PetLibNative.nativeSetYaw(ptr, next)
         PetLibNative.nativePlayCapePose(ptr)
+        spinBase = next
+        spinDone = false
+        startCameraPunch()
         markActive(maxOf(SHOW_OFF_ACTIVE_MILLIS, holdMillis + ACTIVE_LINGER_MILLIS))
-        leapSpinSteps.forEachIndexed { i, step -> handler.postDelayed(step, 780L + i * 125L) }
         // Màn kết xong ~4,6s; quay lại lúc holdMillis (tối thiểu 4,3s)
         handler.postDelayed(recenterAfterShowOff, maxOf(holdMillis, 4300L))
     }
@@ -263,7 +322,11 @@ class PetController(
      * @param zoom 1 = mặc định; ví dụ 1.5 để to hơn 50% (giới hạn 0.25..4)
      */
     fun setZoom(@FloatRange(0.25, 4.0) zoom: Float) {
-        post { PetLibNative.nativeSetZoom(ptr, zoom) }
+        post {
+            baseZoom = zoom
+            // Đang khoe cape thì vòng nhấn camera tự áp zoom mới ở khung kế tiếp.
+            if (!punching) PetLibNative.nativeSetZoom(ptr, zoom)
+        }
     }
 
     /**

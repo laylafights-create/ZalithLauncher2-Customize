@@ -44,3 +44,17 @@ Chạy `cargo test` trong `PetLib/rust` để xác nhận.
   khung hình y hệt; màn hình giữ khung cuối đã đăng. Mọi lệnh đi qua `post{}` / đổi kích thước surface / khoe cape tự đánh dấu "cần vẽ" lại.
   Nhân vật đứng yên giờ tốn ~0% CPU thay vì rasterize liên tục ở 60fps.
 - `tools/gen_fun_clips.py`: kênh hằng (pivot hai tay) chỉ xuất 1 key; `clip_fun.rs` nhỏ đi ~9% (69,9KB -> 63,4KB nguồn).
+
+## Khoe cape v3 (vẫn 5.4s, giữ nguyên mốc thời gian để Kotlin/Rust không phải đổi)
+- **Rung tiếp đất**: hàm `impact()` thêm rung tắt dần lên thân (body_y) và cape (roll) ngay sau cú đáp ở 1.55s và 4.36s.
+- **Hất cape (flick)**: ở 2.3-3.0s tay trái rời hông vung ra, cape cuộn sóng theo (roll + sway thêm).
+- **Giật cape mạnh hơn**: cape kéo ép thêm (36°) rồi bật -148° ở màn kết; cape flutter thêm hài bậc 3 lúc tạo dáng.
+- **Chào quý tộc**: 4.55-5.25s tay phải đặt ngang ngực, tay trái ra sau lưng, cúi người mượt, đầu theo thân (bản đầu vẫy tay ngang mặt trông như dab nên đã bỏ).
+- **Camera nhấn (Kotlin, `PetController.cameraPunch`)**: zoom đẩy nhẹ lúc tạo dáng, nảy +13% khi tiếp đất, +16% khi cape bung; tự trả về đúng `setZoom` của người dùng (không đè zoom đã đặt).
+- Clip bắt đầu/kết thúc đúng tư thế nghỉ như bản cũ (đã kiểm tra khung đầu/cuối). Sinh lại bằng `python3 tools/gen_fun_clips.py`.
+- Chưa chạy `cargo test` (môi trường không có cargo): nên chạy `cargo test` trong `PetLib/rust` trước khi build.
+
+## Mượt hơn (v3.1)
+- **Vòng xoay 360° liên tục**: thay 4 nấc 90° (giật nhịp) bằng yaw đi theo smootherstep 0.78→1.38s, cập nhật mỗi khung (`cameraPunchTick`).
+- Nhấn camera vào mượt (smootherstep 80ms) thay vì tuyến tính, hết "pop".
+- Clip: bỏ rung tay 8Hz (jitter ở 30fps), tăng độ trễ chồng chéo (đầu/tay/cape), lò xo mềm hơn (omega thấp, zeta cao hơn một chút), giãn nhẹ hai cú bật nhanh nhất (tay lúc bật cao, cape lúc giật) để không còn bước >35°/khung.
