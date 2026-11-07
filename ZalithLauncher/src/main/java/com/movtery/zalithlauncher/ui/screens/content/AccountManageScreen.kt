@@ -347,8 +347,7 @@ private fun ActionsLayout(
             skin = skinBytes,
             cape = capeBytes,
             arm = armModel,
-            yaw = Math.toRadians(35.0).toFloat(),
-            playful = true
+            yaw = Math.toRadians(35.0).toFloat()
         )
     }
 }

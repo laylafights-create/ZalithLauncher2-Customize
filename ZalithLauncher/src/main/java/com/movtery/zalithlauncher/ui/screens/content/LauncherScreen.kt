@@ -33,7 +33,6 @@ import com.movtery.zalithlauncher.game.versioninfo.models.isType
 import com.movtery.zalithlauncher.ui.components.McPanel
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.platform.LocalContext
-import com.movtery.petlib.PetAnimation
 import com.movtery.zalithlauncher.game.account.wardrobe.toArmModel
 import com.movtery.zalithlauncher.ui.components.PetModelView
 import kotlinx.coroutines.Dispatchers
@@ -227,9 +226,7 @@ private fun PlayerStage(modifier: Modifier = Modifier) {
             skin = skin,
             cape = cape,
             arm = account?.skinModelType?.toArmModel(),
-            animation = PetAnimation.Idle,
-            gazeEnabled = false,
-            playful = true
+            gazeEnabled = false
         )
     }
 }

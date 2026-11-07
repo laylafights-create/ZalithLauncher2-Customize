@@ -118,7 +118,6 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.core.graphics.createBitmap
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.movtery.petlib.ArmModel
-import com.movtery.petlib.PetAnimation
 import com.movtery.zalithlauncher.BuildKeys
 import com.movtery.zalithlauncher.R
 import com.movtery.zalithlauncher.game.account.Account
@@ -1573,8 +1572,6 @@ fun ChangeSkinDialog(
                                 skin = previewSkin,
                                 cape = previewCape,
                                 arm = previewArm,
-                                animation = PetAnimation.Walking,
-                                animationSpeed = 0.8f,
                                 gazeEnabled = false
                             )
                         }
