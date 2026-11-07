@@ -4,7 +4,8 @@ use glam::{EulerRot, Mat4, Quat, Vec2, Vec3};
 
 use crate::animation::{evaluate_walking, AnimFrame, AnimationId, WALKING_PERIOD};
 use crate::clip::{self, ClipPose, IdleClips};
-use crate::clip_data::{CLIP_IDLE, CLIP_INTERACT, CLIP_SUBS};
+use crate::clip_data::{CLIP_IDLE, CLIP_INTERACT};
+use crate::clip_fun::ALL_SUBS;
 
 /// 攻击动画时长 (20 tick/s 下的 6 tick)
 const SWING_SECONDS: f32 = 0.30;
@@ -446,7 +447,7 @@ impl Skeleton {
                             track.target = 0.;
                         }
                     }
-                    let duration = clip::clip_duration(&CLIP_SUBS[index]);
+                    let duration = clip::clip_duration(&ALL_SUBS[index]);
                     self.tracks
                         .push(Track::oneshot(Source::Sub(index), duration));
                 }
@@ -480,7 +481,7 @@ impl Skeleton {
         match track.source {
             Source::Idle => snapshot_from_pose(clip::sample(&CLIP_IDLE, self.idle_clips.base_time)),
             Source::Walking => snapshot_from_frame(evaluate_walking(track.time), cape_z),
-            Source::Sub(index) => snapshot_from_pose(clip::sample(&CLIP_SUBS[index], track.time)),
+            Source::Sub(index) => snapshot_from_pose(clip::sample(&ALL_SUBS[index], track.time)),
             Source::Interact => snapshot_from_pose(clip::sample(&CLIP_INTERACT, track.time)),
         }
     }

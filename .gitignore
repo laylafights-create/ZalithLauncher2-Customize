@@ -158,3 +158,10 @@ local.properties
 /build/
 /app/build/
 .gradle/
+
+local.properties
+*.jks
+*.keystore
+/build/
+/app/build/
+.gradle/

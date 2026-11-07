@@ -4,6 +4,7 @@ pub mod animation;
 pub mod api;
 mod clip;
 mod clip_data;
+mod clip_fun;
 #[cfg(test)]
 mod clip_parity;
 pub mod lighting;

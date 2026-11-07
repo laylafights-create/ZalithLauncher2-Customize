@@ -135,14 +135,32 @@ class PetController(
      */
     fun setCape(
         cape: ByteArray?,
-        onError: ((String) -> Unit)? = null
+        onError: ((String) -> Unit)? = null,
+        showOff: Boolean = true,
+        showOffMillis: Long = 2500L
     ) {
         post {
-            PetLibNative.nativeSetCape(ptr, cape)?.let { error ->
+            val error = PetLibNative.nativeSetCape(ptr, cape)
+            if (error != null) {
                 Log.w(TAG, "Cape rejected: $error")
                 onError?.invoke(error)
+            } else if (showOff && cape != null) {
+                showOffCape(showOffMillis)
             }
         }
+    }
+
+    private val recenterAfterShowOff = Runnable { recenterYaw() }
+
+    /** Quay lưng khoe cape, giữ một lúc rồi xoay lại. Gọi trên luồng render. */
+    private fun showOffCape(holdMillis: Long) {
+        handler.removeCallbacks(recenterAfterShowOff)
+        val current = PetLibNative.nativeGetYaw(ptr)
+        // Quay về phía gần nhất cho tới khi quay lưng (default + π)
+        val next = current + wrapPi(defaultYaw + Math.PI.toFloat() - current)
+        yawTarget = next
+        PetLibNative.nativeSetYaw(ptr, next)
+        handler.postDelayed(recenterAfterShowOff, holdMillis)
     }
 
     /**
@@ -340,6 +358,7 @@ class PetController(
     override fun close() {
         if (released) return
         released = true
+        handler.removeCallbacks(recenterAfterShowOff)
 
         mainHandler.post {
             frameCallback?.let { Choreographer.getInstance().removeFrameCallback(it) }

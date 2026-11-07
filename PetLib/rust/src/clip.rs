@@ -2,7 +2,8 @@
 
 use glam::{Mat3, Quat, Vec2, Vec3};
 
-use crate::clip_data::{Clip, Joint, CLIP_FPS, CLIP_IDLE, CLIP_SUBS};
+use crate::clip_data::{Clip, Joint, CLIP_FPS, CLIP_IDLE};
+use crate::clip_fun::ALL_SUBS;
 use crate::pose::{flip_quat, ARM_REST_PIVOTS, LEG_REST_PIVOTS};
 
 /// 随机子动画触发间隔（秒）
@@ -184,7 +185,7 @@ impl IdleClips {
     pub(crate) fn tick(&mut self, dt: f32, speed: f32) -> Option<usize> {
         self.advance_base(dt, speed);
         self.countdown -= dt.min(0.05);
-        if self.countdown <= 0. && !CLIP_SUBS.is_empty() {
+        if self.countdown <= 0. && !ALL_SUBS.is_empty() {
             let index = self.pick_sub();
             self.last_sub = Some(index);
             self.countdown = SUB_INTERVAL;
@@ -208,7 +209,7 @@ impl IdleClips {
 
     /// 随机挑一个子动画，排除上一次播放的
     fn pick_sub(&mut self) -> usize {
-        let count = CLIP_SUBS.len();
+        let count = ALL_SUBS.len();
         if count == 0 {
             return 0;
         }
@@ -316,6 +317,21 @@ mod tests {
             pose.cape.x
         );
         assert!(pose.cape.y.abs() < 0.1, "cape z = {}", pose.cape.y);
+    }
+
+    #[test]
+    fn fun_clips_are_finite_and_return_to_rest() {
+        use crate::clip_fun::ALL_SUBS;
+        assert!(ALL_SUBS.len() > CLIP_SUBS.len());
+        for clip in ALL_SUBS.iter() {
+            let duration = clip_duration(clip);
+            assert!(duration > 0.5);
+            for i in 0..=30 {
+                let pose = sample(clip, duration * i as f32 / 30.);
+                assert!(pose.body_rot.is_finite() && pose.head_rot.is_finite());
+                assert!(pose.body_pos.is_finite() && pose.cape.is_finite());
+            }
+        }
     }
 
     #[test]
