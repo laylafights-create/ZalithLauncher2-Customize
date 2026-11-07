@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""Sinh các clip nghịch ngợm (rust/src/clip_fun.rs). Chỉ dùng thư viện chuẩn.
+"""Sinh các clip nghịch ngợm + clip khoe cape (rust/src/clip_fun.rs). Chỉ dùng thư viện chuẩn.
 
-Quy ước (gốc GLTF, đơn vị độ / pixel):
-  chi: x âm = vung ra trước, x dương = ra sau; tay phải z+ = dang ra ngoài, tay trái z- = dang ra ngoài
-  thân: x dương = nghiêng người ra trước; đầu: x dương = cúi, x âm = ngửa
-  body y = xoay quanh trục dọc; body_pos y âm = hạ xuống
-Mỗi clip: 30 FPS, bắt đầu/kết thúc ở tư thế nghỉ để fade mượt.
+Quy ước (gốc GLTF, độ / pixel):
+  chi: x âm = vung ra trước/lên trời, x dương = ra sau; tay phải z+ = dang ngoài, tay trái z- = dang ngoài
+  thân: x dương = ngả người ra trước; đầu: x dương = cúi, x âm = ngửa; body y = xoay quanh trục dọc
+  body_y âm = hạ xuống, lift dương = nhấc cả người khỏi đất
+
+Chống "cứng nhắc":
+  - nội suy Hermite (vận tốc liên tục) thay vì smoothstep dừng ở mỗi key
+  - chuẩn bị (anticipation) + overshoot bằng key phụ
+  - overlapping action: đầu/tay/cape trễ so với thân (LAG)
+  - clip kéo dài thêm TAIL giây để các khớp trễ kịp về tư thế nghỉ
 """
 import math
 from pathlib import Path
@@ -13,6 +18,8 @@ from pathlib import Path
 FPS = 30
 OUT = Path(__file__).resolve().parent.parent / "rust" / "src" / "clip_fun.rs"
 REST_Y = -0.64
+TAIL = 0.25
+LAG = {"head": 0.06, "armR": 0.045, "armL": 0.06, "cape": 0.16}
 
 
 def smooth(t):
@@ -20,13 +27,33 @@ def smooth(t):
     return t * t * (3 - 2 * t)
 
 
-def track(keys, t):
-    """keys: [(time, value)] -> nội suy smoothstep."""
+def T(keys, t):
+    """Hermite qua các key (time, value); tiếp tuyến Catmull-Rom, về 0 tại cực trị để không vọt quá."""
+    n = len(keys)
     if t <= keys[0][0]:
         return keys[0][1]
-    for (t0, v0), (t1, v1) in zip(keys, keys[1:]):
+    if t >= keys[-1][0]:
+        return keys[-1][1]
+    m = []
+    for i in range(n):
+        if i == 0 or i == n - 1:
+            m.append(0.0)
+            continue
+        a, b, c = keys[i - 1], keys[i], keys[i + 1]
+        if (b[1] - a[1]) * (c[1] - b[1]) <= 0:
+            m.append(0.0)
+        else:
+            m.append((c[1] - a[1]) / (c[0] - a[0]))
+    for i in range(n - 1):
+        (t0, v0), (t1, v1) = keys[i], keys[i + 1]
         if t <= t1:
-            return v0 + (v1 - v0) * smooth((t - t0) / (t1 - t0))
+            h = t1 - t0
+            s = (t - t0) / h
+            h00 = 2 * s ** 3 - 3 * s ** 2 + 1
+            h10 = s ** 3 - 2 * s ** 2 + s
+            h01 = -2 * s ** 3 + 3 * s ** 2
+            h11 = s ** 3 - s ** 2
+            return h00 * v0 + h10 * h * m[i] + h01 * v1 + h11 * h * m[i + 1]
     return keys[-1][1]
 
 
@@ -34,9 +61,13 @@ def osc(amp, hz, t, phase=0.0):
     return amp * math.sin(2 * math.pi * hz * t + phase)
 
 
-def env(t, dur, fade=0.25):
-    """Bao: tăng dần ở đầu, giảm dần ở cuối để dao động bắt đầu/kết thúc ở 0."""
+def env(t, dur, fade=0.35):
     return smooth(t / fade) * smooth((dur - t) / fade)
+
+
+def window(t, a, b, fade=0.3):
+    """1 trong [a, b], mượt ở hai đầu."""
+    return smooth((t - a) / fade) * smooth((b - t) / fade)
 
 
 def quat_euler(x, y, z):
@@ -44,185 +75,227 @@ def quat_euler(x, y, z):
     qx = (math.sin(x), 0, 0, math.cos(x))
     qy = (0, math.sin(y), 0, math.cos(y))
     qz = (0, 0, math.sin(z), math.cos(z))
-
-    def mul(a, b):
-        ax, ay, az, aw = a
-        bx, by, bz, bw = b
-        return (aw * bx + ax * bw + ay * bz - az * by,
-                aw * by - ax * bz + ay * bw + az * bx,
-                aw * bz + ax * by - ay * bx + az * bw,
-                aw * bw - ax * bx - ay * by - az * bz)
-
-    q = mul(mul(qx, qy), qz)
+    q = qmul(qmul(qx, qy), qz)
     n = math.sqrt(sum(c * c for c in q))
     return tuple(c / n for c in q)
+
+
+def qmul(a, b):
+    ax, ay, az, aw = a
+    bx, by, bz, bw = b
+    return (aw * bx + ax * bw + ay * bz - az * by,
+            aw * by - ax * bz + ay * bw + az * bx,
+            aw * bz + ax * by - ay * bx + az * bw,
+            aw * bw - ax * bx - ay * by - az * bz)
 
 
 CAPE_REST = (0.0, 0.996438, -0.084327, 0.0)  # khóa đầu của cape trong CLIP_IDLE
 
 
 def cape_quat(sway_deg):
-    """Quay cape quanh trục x (đung đưa) so với tư thế nghỉ của idle."""
     a = math.radians(sway_deg) / 2
-    rx = (math.sin(a), 0.0, 0.0, math.cos(a))
-    bx, by, bz, bw = rx
-    cx, cy, cz, cw = CAPE_REST
-    q = (bw * cx + bx * cw + by * cz - bz * cy,
-         bw * cy - bx * cz + by * cw + bz * cx,
-         bw * cz + bx * cy - by * cx + bz * cw,
-         bw * cw - bx * cx - by * cy - bz * cz)
+    q = qmul((math.sin(a), 0.0, 0.0, math.cos(a)), CAPE_REST)
     n = math.sqrt(sum(c * c for c in q))
     return tuple(c / n for c in q)
 
 
-def clip(name, dur, fn):
-    """fn(t) -> dict: body, head, armR, armL, legR, legL (euler độ), cape (độ x),
-    body_y, lift (nâng cả người, px), armR_p/armL_p/legR_p/legL_p (+ offset pivot)."""
-    n = int(round(dur * FPS)) + 1
+def clip(dur, fn):
+    """fn(t) với t∈[0,dur] -> dict tư thế. Khớp trễ (LAG) lấy mẫu fn ở thời điểm sớm hơn."""
+    n = int(round((dur + TAIL) * FPS)) + 1
     ch = {k: [] for k in ("Body", "Head", "ArmRight", "ArmLeft", "LegRight", "LegLeft", "Cape")}
     tr = {k: [] for k in ("Body", "ArmRight", "ArmLeft", "LegRight", "LegLeft")}
+    z3 = (0, 0, 0)
+
+    def at(t, lag=0.0):
+        return fn(max(0.0, min(dur, t - lag)))
+
     for i in range(n):
         t = i / FPS
-        p = fn(t)
-        z3 = (0, 0, 0)
+        p = at(t)
+        ph, pr, pl, pc = (at(t, LAG[k]) for k in ("head", "armR", "armL", "cape"))
         ch["Body"].append(quat_euler(*p.get("body", z3)))
-        ch["Head"].append(quat_euler(*p.get("head", z3)))
-        ch["ArmRight"].append(quat_euler(*p.get("armR", z3)))
-        ch["ArmLeft"].append(quat_euler(*p.get("armL", z3)))
+        ch["Head"].append(quat_euler(*ph.get("head", z3)))
+        ch["ArmRight"].append(quat_euler(*pr.get("armR", z3)))
+        ch["ArmLeft"].append(quat_euler(*pl.get("armL", z3)))
         ch["LegRight"].append(quat_euler(*p.get("legR", z3)))
         ch["LegLeft"].append(quat_euler(*p.get("legL", z3)))
-        ch["Cape"].append(cape_quat(p.get("cape", 0.0)))
+        ch["Cape"].append(cape_quat(pc.get("cape", 0.0)))
         lift = p.get("lift", 0.0)
-        by = p.get("body_y", 0.0)
-        tr["Body"].append((p.get("body_x", 0.0), REST_Y + lift + by, 0.0))
+        tr["Body"].append((0.0, REST_Y + lift + p.get("body_y", 0.0), 0.0))
         tr["ArmRight"].append((5.0, 10.0 + lift, 0.0))
         tr["ArmLeft"].append((-5.0, 10.0 + lift, 0.0))
-        tr["LegRight"].append((1.9, max(0.0, lift + p.get("legR_up", 0.0)), 0.0))
-        tr["LegLeft"].append((-1.9, max(0.0, lift + p.get("legL_up", 0.0)), 0.0))
-    return name, ch, tr
+        tr["LegRight"].append((1.9, max(0.0, lift), 0.0))
+        tr["LegLeft"].append((-1.9, max(0.0, lift), 0.0))
+    return ch, tr
 
 
-# ---------- các clip ----------
+# ============ các clip ============
 
-def jump(t):  # nhảy lên vui sướng
-    d = 1.3
-    crouch = track([(0, 0), (.25, 1), (.4, 0)], t)
-    air = track([(0, 0), (.4, 0), (.6, 1), (.8, 0), (1.3, 0)], t)
-    lift = 4.5 * math.sin(math.pi * smooth(air)) if .4 <= t <= .8 else 0.0
-    up = track([(0, 0), (.4, 0), (.6, 1), (.8, 0), (1.3, 0)], t)
+def jump(t):
+    crouch = T([(0, 0), (.4, 1), (.6, .2), (.62, 0), (1.15, 0), (1.3, .8), (1.7, 0)], t)
+    lift = T([(0, 0), (.58, 0), (.85, 5.2), (1.12, 0)], t)
+    ax = T([(0, 0), (.4, 40), (.62, -70), (.85, -168), (1.1, -125), (1.5, 18), (1.9, 0)], t)
+    az = T([(0, 0), (.6, 8), (.85, 38), (1.1, 22), (1.4, -3), (1.8, 0)], t)
     return dict(
-        body_y=-1.5 * crouch + 0, lift=lift,
-        armR=(-150 * up + 20 * crouch, 0, 25 * up), armL=(-150 * up + 20 * crouch, 0, -25 * up),
-        legR=(-35 * crouch + 25 * up, 0, 0), legL=(-35 * crouch + 25 * up, 0, 0),
-        body=(8 * crouch, 0, 0), head=(-10 * up, 0, 0),
-        cape=-15 * up + 10 * crouch, legR_up=0, legL_up=0)
+        body_y=-1.5 * crouch, lift=lift,
+        armR=(ax, 0, az), armL=(ax, 0, -az),
+        legR=(T([(0, 0), (.4, -14), (.85, -32), (1.1, -8), (1.8, 0)], t), 0, T([(0, 0), (.85, 13), (1.2, 0)], t)),
+        legL=(T([(0, 0), (.4, 10), (.85, 24), (1.1, 6), (1.8, 0)], t), 0, T([(0, 0), (.85, -13), (1.2, 0)], t)),
+        body=(T([(0, 0), (.4, 13), (.7, -9), (1.1, -4), (1.35, 9), (1.8, 0)], t), 0, 0),
+        head=(T([(0, 0), (.4, 12), (.85, -20), (1.3, 7), (1.8, 0)], t), 0, 0),
+        cape=T([(0, 0), (.4, 12), (.85, -28), (1.2, 14), (1.8, 0)], t))
 
 
-def spin(t):  # xoay vòng vòng như balerina
-    d = 1.6
-    a = track([(0, 0), (.3, 0), (1.3, 360), (1.6, 360)], t)
-    arms = track([(0, 0), (.3, 1), (1.3, 1), (1.6, 0)], t)
-    return dict(body=(0, a, 0), head=(0, 0, 0),
-                armR=(0, 0, 80 * arms), armL=(0, 0, -80 * arms),
-                legR=(0, 0, 0), legL=(0, 0, 0), cape=-25 * arms)
-
-
-def wave(t):  # vẫy tay chào
-    d = 2.2
-    up = track([(0, 0), (.35, 1), (d - .4, 1), (d, 0)], t)
-    w = osc(28, 2.4, t) * up
-    return dict(armR=(-150 * up, 0, 30 * up + w), head=(0, -12 * up, 6 * up),
-                body=(0, -6 * up, 0), cape=5 * up)
-
-
-def stomp(t):  # giậm chân dỗi
-    d = 2.2
-    e = env(t, d, .2)
-    s = math.sin(2 * math.pi * 2.5 * t)
+def spin(t):
+    ang = T([(0, 0), (.4, -28), (1.7, 382), (2.0, 356), (2.25, 360)], t)
+    arms = T([(0, 0), (.5, 0), (.95, 82), (1.7, 82), (2.1, 0)], t)
     return dict(
-        body=(0, 0, osc(4, 2.5, t) * e), head=(8 * e, 0, osc(6, 2.5, t, .5) * e),
-        armR=(-20 * e, 0, -8 * e), armL=(-20 * e, 0, 8 * e),
-        legR=(-40 * max(0, s) * e, 0, 0), legL=(-40 * max(0, -s) * e, 0, 0),
-        legR_up=1.5 * max(0, s) * e, legL_up=1.5 * max(0, -s) * e,
-        body_y=-1.0 * max(0, -abs(s)) * e, cape=osc(10, 2.5, t) * e)
+        body=(T([(0, 0), (.4, 4), (1.7, -3), (2.25, 0)], t), ang, 0),
+        armR=(T([(0, 0), (.4, 25), (.95, -8), (2.1, 0)], t), 0, arms),
+        armL=(T([(0, 0), (.4, -15), (.95, -8), (2.1, 0)], t), 0, -arms),
+        legR=(0, 0, 0), legL=(T([(0, 0), (.6, 0), (1.0, 38), (1.7, 38), (2.1, 0)], t), 0, 0),
+        head=(T([(0, 0), (1.0, -6), (2.25, 0)], t), 0, 0),
+        lift=0.7 * window(t, .7, 1.8, .35), cape=34 * window(t, .5, 1.9, .5))
 
 
-def dance(t):  # lắc lư nhún nhảy
-    d = 3.0
-    e = env(t, d, .3)
-    s = lambda a, ph=0: osc(a, 2.0, t, ph) * e
-    bounce = abs(math.sin(math.pi * 2.0 * t)) * e
+def wave(t):
+    up = T([(0, 0), (.3, -.12), (.75, 1), (2.0, 1), (2.5, 0)], t)
+    w = window(t, .85, 2.05, .25)
     return dict(
-        body=(0, s(15), s(6)), head=(s(6, 1.2), s(-12), s(10)),
-        armR=(-60 * e + s(35, 0), 0, 25 * e + s(10)), armL=(-60 * e + s(35, math.pi), 0, -25 * e + s(10)),
-        legR=(s(18, math.pi), 0, 0), legL=(s(18), 0, 0),
-        lift=1.2 * bounce, cape=s(18))
+        armR=(-150 * up + 12 * (1 - up) * smooth(t / .3) * (1 if t < .75 else 0), 0, 24 * up + osc(26, 2.1, t) * w),
+        armL=(osc(2, 1.0, t) * up, 0, -6 * up),
+        head=(T([(0, 0), (.8, -6), (2.0, -4), (2.6, 0)], t), T([(0, 0), (.8, -12), (2.0, -9), (2.6, 0)], t), 7 * up + osc(2, 2.1, t) * w),
+        body=(0, -7 * up, osc(2.5, 1.05, t) * w), legR=(-6 * up, 0, 0), legL=(4 * up, 0, 0),
+        body_y=osc(.25, 2.1, t, 1.2) * w, cape=6 * up + osc(5, 2.1, t, 1) * w)
 
 
-def peek(t):  # lén lén nhìn quanh, tay che mắt
-    d = 3.0
-    lean = track([(0, 0), (.4, 1), (d - .4, 1), (d, 0)], t)
-    look = osc(30, .9, t) * lean
+def stomp(t):
+    dur = 2.8
+    e = env(t, dur, .4)
+    ph = 2 * math.pi * 1.6 * t
+    s = math.sin(ph)
+    liftR, liftL = max(0, s) * e, max(0, -s) * e
+    dip = -(1 - abs(s)) ** 6 * e
     return dict(
-        body=(14 * lean, 0, 0), head=(10 * lean, look, 0),
-        armR=(-95 * lean, 15 * lean, 8 * lean), armL=(15 * lean, 0, -10 * lean),
-        legR=(-10 * lean, 0, 0), legL=(8 * lean, 0, 0), cape=-8 * lean)
+        legR=(-42 * liftR ** .8, 0, 0), legL=(-42 * liftL ** .8, 0, 0),
+        body_y=1.0 * dip, head=(9 * e - 8 * dip, osc(7, 1.6, t, .6) * e, 0),
+        body=(10 * e - 3 * dip, osc(3, 0.8, t) * e, osc(3.5, 1.6, t) * e),
+        armR=(-28 * e + osc(9, 3.2, t) * e, 0, -7 * e), armL=(-28 * e + osc(9, 3.2, t, 1.3) * e, 0, 7 * e),
+        cape=osc(10, 1.6, t, 1) * e)
 
 
-def headbang(t):  # lắc đầu rock
-    d = 2.4
-    e = env(t, d, .25)
-    nod = osc(35, 3.0, t) * e
+def dance(t):
+    dur = 3.6
+    e = env(t, dur, .45)
+    f = 1.8
+    ph = 2 * math.pi * f * t
+    bounce = (1 - math.cos(ph)) / 2
     return dict(
-        head=(nod + 8 * e, 0, osc(8, 1.5, t) * e), body=(osc(6, 3.0, t, math.pi) * e, 0, 0),
-        armR=(-70 * e + osc(10, 3.0, t) * e, 0, 12 * e), armL=(-100 * e, 0, -8 * e),
-        legR=(osc(8, 3.0, t) * e, 0, 0), legL=(-8 * e, 0, 0), cape=osc(12, 3.0, t) * e)
+        body_y=-1.0 * bounce * e, lift=0,
+        body=(5 * (1 - bounce) * e, osc(15, f / 2, t) , osc(5, f / 2, t, math.pi / 2) * e),
+        head=(osc(8, f, t, .8) * e, osc(14, f / 2, t, 1.0) * e, osc(10, f / 2, t) * e),
+        armR=(-70 * e + osc(42, f / 2, t) * e, 0, 22 * e + osc(6, f, t) * e),
+        armL=(-70 * e + osc(42, f / 2, t, math.pi) * e, 0, -22 * e - osc(6, f, t, 1) * e),
+        legR=(osc(20, f / 2, t, math.pi) * e, 0, 7 * e), legL=(osc(20, f / 2, t) * e, 0, -7 * e),
+        cape=osc(18, f / 2, t, .6) * e) | {"body": (5 * (1 - bounce) * e, osc(15, f / 2, t) * e, osc(5, f / 2, t, math.pi / 2) * e)}
 
 
-def kick(t):  # đá chân vu vơ
-    d = 1.8
-    k = track([(0, 0), (.35, -.2), (.6, 1), (.85, 0.6), (d, 0)], t)
-    lean = track([(0, 0), (.4, 1), (1.2, 0.4), (d, 0)], t)
+def peek(t):
+    lean = T([(0, 0), (.55, 1), (2.65, 1), (3.3, 0)], t)
+    hy = T([(0, 0), (.55, 0), (1.0, -36), (1.6, -36), (2.1, 32), (2.6, 32), (3.0, 0), (3.3, 0)], t)
     return dict(
-        legR=(-75 * max(0, k) + 10 * min(0, k), 0, 0), legL=(5 * lean, 0, 0),
-        body=(-6 * lean, 0, 0), head=(6 * lean, 10 * lean, 0),
-        armL=(30 * lean, 0, -20 * lean), armR=(-35 * lean, 0, 15 * lean),
-        legR_up=2.0 * max(0, k), cape=12 * lean)
+        body=(16 * lean, hy * .3, 0), head=(9 * lean + osc(2, 1.3, t) * lean, hy, 0),
+        armR=(-98 * lean, 16 * lean, 9 * lean), armL=(18 * lean, 0, -12 * lean),
+        legR=(10 * lean, 0, 0), legL=(-9 * lean, 0, 0), lift=0.5 * lean,
+        body_y=osc(.18, 1.2, t) * lean, cape=-10 * lean)
 
 
-def stretch(t):  # vươn vai ngáp
-    d = 2.6
-    s = track([(0, 0), (.6, 1), (1.8, 1), (d, 0)], t)
-    shake = osc(1.2, 8.0, t) * s * smooth((1.8 - t) / .2) if t > .6 else 0
+def headbang(t):
+    dur = 2.8
+    e = env(t, dur, .4)
+    f = 2.2
+    ph = 2 * math.pi * f * t
     return dict(
-        armR=(-170 * s + shake, 0, 14 * s), armL=(-170 * s - shake, 0, -14 * s),
-        body=(-8 * s, 0, 0), head=(-22 * s, 0, 0),
-        legR=(0, 0, 0), legL=(0, 0, 0), lift=0.5 * s, cape=14 * s)
+        head=(10 * e + 30 * math.sin(ph) * e, osc(6, f / 2, t) * e, osc(7, f / 2, t, .5) * e),
+        body=(osc(6, f, t, math.pi + .4) * e, osc(7, f / 2, t) * e, 0),
+        body_y=-0.6 * (1 - math.cos(ph)) / 2 * e,
+        armL=(-55 * e, 0, -9 * e), armR=(-42 * e + osc(14, f * 2, t) * e, 0, 14 * e),
+        legR=(osc(9, f / 2, t) * e, 0, 5 * e), legL=(-10 * e, 0, -5 * e), cape=osc(14, f, t, 1) * e)
 
 
-def taunt(t):  # le lưỡi chọc ghẹo: lắc mông, vẫy tay bên đầu
-    d = 2.6
-    e = env(t, d, .3)
+def kick(t):
+    kx = T([(0, 0), (.4, 38), (.7, -85), (.95, -72), (1.5, 6), (2.1, 0)], t)
+    lean = T([(0, 0), (.4, 5), (.7, -10), (1.0, -5), (1.6, 0)], t)
     return dict(
-        head=(osc(6, 3.0, t) * e, 0, 14 * e + osc(6, 3.0, t) * e),
-        armR=(-40 * e, 0, 60 * e), armL=(-40 * e, 0, -60 * e),
-        body=(0, osc(14, 3.0, t) * e, osc(4, 3.0, t, 1.5) * e),
-        legR=(osc(10, 3.0, t) * e, 0, 0), legL=(osc(10, 3.0, t, math.pi) * e, 0, 0),
-        cape=osc(16, 3.0, t) * e)
+        legR=(kx, 0, 4 * window(t, .4, 1.2, .3)), legL=(-4 * window(t, .3, 1.4, .3), 0, 0),
+        body=(lean, T([(0, 0), (.7, -9), (1.5, 0)], t), 0),
+        head=(T([(0, 0), (.4, 6), (.8, 14), (1.5, 0)], t), T([(0, 0), (.7, 10), (1.5, 0)], t), 0),
+        armR=(T([(0, 0), (.5, -35), (.95, 25), (1.6, 0)], t), 0, 14 * window(t, .4, 1.2, .3)),
+        armL=(T([(0, 0), (.5, 28), (.95, -30), (1.6, 0)], t), 0, -16 * window(t, .4, 1.2, .3)),
+        cape=T([(0, 0), (.4, -14), (.75, 24), (1.4, 0)], t), lift=0)
+
+
+def stretch(t):
+    up = T([(0, 0), (.4, -.1), (1.1, 1), (2.1, 1), (3.0, 0)], t)
+    shake = window(t, 1.2, 2.1, .2)
+    tremble = osc(1.6, 7.0, t) * shake
+    rel = window(t, 2.2, 2.9, .2)
+    return dict(
+        armR=(-172 * up + tremble + osc(10, 5, t) * rel, 0, 15 * up),
+        armL=(-172 * up - tremble - osc(10, 5, t, 1) * rel, 0, -15 * up),
+        body=(-10 * up, 0, 0), head=(-24 * up + 10 * rel, 0, 0), lift=0.6 * up,
+        legR=(-3 * up, 0, 2 * up), legL=(3 * up, 0, -2 * up), cape=15 * up)
+
+
+def taunt(t):
+    dur = 3.0
+    e = env(t, dur, .4)
+    f = 1.6
+    return dict(
+        head=(osc(6, f * 2, t) * e - 4 * e, osc(5, f, t) * e, 15 * e + osc(6, f * 2, t, 1) * e),
+        armR=(-96 * e, 0, -14 * e + osc(18, f * 2.5, t) * e), armL=(-96 * e, 0, 14 * e + osc(18, f * 2.5, t, 1.4) * e),
+        body=(-4 * e, osc(15, f, t) * e, osc(4, f, t, 1.57) * e),
+        legR=(osc(10, f, t) * e, 0, 4 * e), legL=(osc(10, f, t, math.pi) * e, 0, -4 * e),
+        body_y=-0.4 * abs(math.sin(math.pi * f * t)) * e, cape=osc(16, f, t, .5) * e)
+
+
+# ============ clip khoe cape: giơ một tay lên trời ============
+
+def cape_pose(t):
+    # 0-.7 xoay người + gồng lực; .7-1.45 vung tay lên trời; hold có nhịp thở; ~2.75 hạ tay
+    hold = window(t, 1.2, 2.55, .3)
+    breathe = osc(1, 1.4, t) * hold
+    ax = T([(0, 0), (.45, 42), (.8, -60), (1.2, -184), (1.5, -174), (2.55, -176), (3.15, 14), (3.65, 0)], t)
+    az = T([(0, 0), (.45, 8), (1.2, 9), (1.5, 6), (2.6, 8), (3.55, 0)], t)
+    sway = osc(2.2, 1.2, t) * hold
+    return dict(
+        armR=(ax + sway, 0, az + osc(1.6, 1.7, t, 1) * hold),
+        armL=(T([(0, 0), (.45, 20), (1.2, 8), (2.7, 8), (3.55, 0)], t), 0,
+              T([(0, 0), (.45, -14), (1.2, -34), (2.7, -34), (3.55, 0)], t)),
+        body=(T([(0, 0), (.45, 9), (1.2, -9), (2.6, -9), (3.55, 0)], t),
+              T([(0, 0), (.45, 5), (1.2, -7), (2.6, -7), (3.55, 0)], t), osc(1.8, 1.2, t, .5) * hold),
+        head=(T([(0, 0), (.45, 12), (1.25, -26), (1.55, -20), (2.6, -22), (3.55, 0)], t),
+              T([(0, 0), (1.25, 14), (2.6, 12), (3.55, 0)], t), 6 * hold),
+        legR=(T([(0, 0), (.45, -10), (1.2, -13), (2.6, -13), (3.55, 0)], t), 0, 3 * hold),
+        legL=(T([(0, 0), (.45, 8), (1.2, 10), (2.6, 10), (3.55, 0)], t), 0, -4 * hold),
+        body_y=T([(0, 0), (.45, -1.3), (.95, 0)], t) - 0.2 * breathe,
+        lift=T([(0, 0), (.85, 0), (1.15, 1.3), (1.4, 0)], t),
+        cape=T([(0, 0), (.45, 10), (1.2, -30), (1.7, -18), (2.6, -22), (3.55, 0)], t) + osc(8, 1.0, t, .9) * hold)
 
 
 CLIPS = [
-    ("FUN_JUMP", "Nhảy lên vui sướng", 1.3, jump),
-    ("FUN_SPIN", "Xoay vòng", 1.6, spin),
-    ("FUN_WAVE", "Vẫy tay chào", 2.2, wave),
-    ("FUN_STOMP", "Giậm chân dỗi", 2.2, stomp),
-    ("FUN_DANCE", "Nhún nhảy", 3.0, dance),
-    ("FUN_PEEK", "Lén nhìn quanh", 3.0, peek),
-    ("FUN_HEADBANG", "Lắc đầu rock", 2.4, headbang),
-    ("FUN_KICK", "Đá chân vu vơ", 1.8, kick),
-    ("FUN_STRETCH", "Vươn vai", 2.6, stretch),
-    ("FUN_TAUNT", "Chọc ghẹo", 2.6, taunt),
+    ("FUN_JUMP", "Nhảy lên vui sướng", 1.8, jump),
+    ("FUN_SPIN", "Xoay vòng như ballerina", 2.25, spin),
+    ("FUN_WAVE", "Vẫy tay chào", 2.6, wave),
+    ("FUN_STOMP", "Giậm chân dỗi", 2.8, stomp),
+    ("FUN_DANCE", "Nhún nhảy", 3.6, dance),
+    ("FUN_PEEK", "Lén nhìn quanh", 3.3, peek),
+    ("FUN_HEADBANG", "Lắc đầu rock", 2.8, headbang),
+    ("FUN_KICK", "Đá chân vu vơ", 2.1, kick),
+    ("FUN_STRETCH", "Vươn vai", 3.0, stretch),
+    ("FUN_TAUNT", "Chọc ghẹo", 3.0, taunt),
 ]
+SPECIAL = [("CAPE_POSE", "Khoe cape: giơ một tay lên trời", 3.65, cape_pose)]
 
 
 def f(v):
@@ -230,23 +303,23 @@ def f(v):
     return s if "." in s else s + ".0"
 
 
+def emit(out, const, doc, dur, fn):
+    ch, tr = clip(dur, fn)
+    out.append(f"/// {doc}\n#[rustfmt::skip]\npub(crate) static {const}: Clip = Clip {{\n    channels: &[\n")
+    for j in ("Body", "Head", "ArmRight", "ArmLeft", "LegRight", "LegLeft", "Cape"):
+        rot = ", ".join("[" + ", ".join(f(c) for c in q) + "]" for q in ch[j])
+        trs = ", ".join("[" + ", ".join(f(c) for c in v) + "]" for v in tr[j]) if j in tr else ""
+        out.append(f"        Channel {{\n            joint: Joint::{j},\n            rotation: &[{rot}],\n            translation: &[{trs}],\n        }},\n")
+    out.append("    ],\n};\n")
+
+
 def main():
-    out = ["//! Clip nghịch ngợm bổ sung. Sinh bởi tools/gen_fun_clips.py — đừng sửa tay.\n",
+    out = ["//! Clip nghịch ngợm + khoe cape. Sinh bởi tools/gen_fun_clips.py — đừng sửa tay.\n",
            "use crate::clip_data::{Channel, Clip, Joint};\n\n"]
-    joints = [("Body", "Body"), ("Head", "Head"), ("ArmRight", "ArmRight"), ("ArmLeft", "ArmLeft"),
-              ("LegRight", "LegRight"), ("LegLeft", "LegLeft"), ("Cape", "Cape")]
-    for const, doc, dur, fn in CLIPS:
-        _, ch, tr = clip(const, dur, fn)
-        out.append(f"/// {doc}\n#[rustfmt::skip]\npub(crate) static {const}: Clip = Clip {{\n    channels: &[\n")
-        for j, jn in joints:
-            rot = ", ".join("[" + ", ".join(f(c) for c in q) + "]" for q in ch[j])
-            trs = ""
-            if j in tr:
-                trs = ", ".join("[" + ", ".join(f(c) for c in v) + "]" for v in tr[j])
-            out.append(f"        Channel {{\n            joint: Joint::{jn},\n            rotation: &[{rot}],\n            translation: &[{trs}],\n        }},\n")
-        out.append("    ],\n};\n")
+    for c in CLIPS + SPECIAL:
+        emit(out, *c)
     names = ", ".join(c[0] for c in CLIPS)
-    out.append("\n/// Toàn bộ pool animation ngẫu nhiên khi đứng chờ (3 gốc + các clip nghịch ngợm)\n")
+    out.append("\n/// Pool animation ngẫu nhiên khi đứng chờ (3 gốc + các clip nghịch ngợm)\n")
     out.append(f"pub(crate) static ALL_SUBS: &[Clip] = &[\n    crate::clip_data::CLIP_SUB_1,\n    crate::clip_data::CLIP_SUB_2,\n    crate::clip_data::CLIP_SUB_3,\n    {names},\n];\n")
     OUT.write_text("".join(out), encoding="utf-8")
     print("wrote", OUT, OUT.stat().st_size, "bytes")

@@ -73,33 +73,34 @@ pub(crate) fn evaluate_walking(t: f32) -> AnimFrame {
     walking(t * 8.)
 }
 
-/// 行走动画，移植 skinview3d 的 WalkingAnimation
-/// https://github.com/bs-community/skinview3d/blob/9b8d22d/src/animation.ts#L153
-/// 欧拉为原始 GLTF 基(x/z 相对 skinview3d 渲染基取反)。
+/// Dáng đi tự nhiên, phát triển từ WalkingAnimation của skinview3d
+/// (https://github.com/bs-community/skinview3d/blob/9b8d22d/src/animation.ts#L153).
+/// Thêm so với bản gốc: nhấp nhô theo bước, thân xoay ngược chiều hông, đầu giữ thăng bằng,
+/// tay đánh trễ pha so với chân, chân có hài bậc ba (chạm đất dứt khoát), cape bay lệch pha.
+/// Mọi thành phần của tay/chân đều tuần hoàn 2π theo pha t để khớp WALKING_PERIOD.
+/// Góc Euler theo gốc GLTF (x âm = chi vung ra trước).
 fn walking(t: f32) -> AnimFrame {
-    const ARM_Z: f32 = std::f32::consts::PI * 0.02;
+    use std::f32::consts::PI;
+    const ARM_Z: f32 = PI * 0.02;
+    let leg = |p: f32| -(0.55 * p.sin() + 0.08 * (3. * p).sin());
+    let arm = |p: f32| 0.52 * (p - 0.35).sin();
+    let twist = 0.07 * t.sin();
+    let bounce = t.cos() * t.cos();
     AnimFrame {
-        body_rot: Vec3::ZERO,
-        head_rot: Vec3::new(-(t / 5.).sin() * 0.1, (t / 4.).sin() * 0.2, 0.),
+        body_rot: Vec3::new(0.03, twist, 0.03 * t.cos()),
+        head_rot: Vec3::new(
+            -(t / 5.).sin() * 0.1 - 0.03 * (2. * t).cos(),
+            (t / 4.).sin() * 0.2 - 0.6 * twist,
+            -0.02 * t.cos(),
+        ),
         arms: [
-            Vec3::new(
-                -(t + std::f32::consts::PI).sin() * 0.5,
-                0.,
-                -(t.cos() * 0.03 + ARM_Z),
-            ),
-            Vec3::new(
-                -t.sin() * 0.5,
-                0.,
-                -((t + std::f32::consts::PI).cos() * 0.03 - ARM_Z),
-            ),
+            Vec3::new(arm(t), 0., -(t.cos() * 0.03 + ARM_Z)),
+            Vec3::new(-arm(t), 0., -((t + PI).cos() * 0.03 - ARM_Z)),
         ],
-        legs: [
-            Vec3::new(-t.sin() * 0.5, 0., 0.),
-            Vec3::new(-(t + std::f32::consts::PI).sin() * 0.5, 0., 0.),
-        ],
-        body_pos: Vec3::ZERO,
+        legs: [Vec3::new(leg(t), 0., 0.), Vec3::new(leg(t + PI), 0., 0.)],
+        body_pos: Vec3::new(0.12 * t.sin(), -0.9 + 0.8 * bounce, 0.),
         head_pos: 0.,
-        cape_x: (t / 1.5).sin() * 0.06 + std::f32::consts::PI * 0.06,
+        cape_x: (t / 1.5).sin() * 0.06 + PI * 0.06 + 0.05 * (2. * t - 0.9).sin(),
         cape_z: None,
     }
 }
@@ -107,65 +108,20 @@ fn walking(t: f32) -> AnimFrame {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pose::{flip_quat, rotation};
-    use glam::Quat;
 
-    /// 旧渲染基(换基前)的行走公式,仅测试用:作为共轭映射校验的参照。
-    fn walking_reference(t: f32) -> AnimFrame {
-        const ARM_Z: f32 = std::f32::consts::PI * 0.02;
-        AnimFrame {
-            body_rot: Vec3::ZERO,
-            head_rot: Vec3::new((t / 5.).sin() * 0.1, (t / 4.).sin() * 0.2, 0.),
-            arms: [
-                Vec3::new(
-                    (t + std::f32::consts::PI).sin() * 0.5,
-                    0.,
-                    t.cos() * 0.03 + ARM_Z,
-                ),
-                Vec3::new(
-                    t.sin() * 0.5,
-                    0.,
-                    (t + std::f32::consts::PI).cos() * 0.03 - ARM_Z,
-                ),
-            ],
-            legs: [
-                Vec3::new(t.sin() * 0.5, 0., 0.),
-                Vec3::new((t + std::f32::consts::PI).sin() * 0.5, 0., 0.),
-            ],
-            body_pos: Vec3::ZERO,
-            head_pos: 0.,
-            cape_x: (t / 1.5).sin() * 0.06 + std::f32::consts::PI * 0.06,
-            cape_z: None,
-        }
-    }
-
-    /// 换基校验:原始 GLTF 基的新公式必须与旧渲染基公式呈 180°Y 共轭,
-    /// 保证行走观感与换基前逐帧一致。
+    /// Dáng đi phải mượt: không nhảy vọt giữa hai khung liên tiếp và luôn hữu hạn.
     #[test]
-    fn walking_matches_conjugated_reference() {
-        let conj = |q: Quat| flip_quat(q).normalize();
-        let rot = |e: Vec3| rotation(e.x, e.y, e.z);
-        // 同旋判定:归一化四元数点积绝对值 ≈ 1(双覆盖取 abs)。
-        // 不用 angle_between:f32 点积舍入到 ≥1 时 acos 会产生 NaN。
-        let same = |a: Quat, b: Quat| (a.normalize().dot(b.normalize()).abs() - 1.).abs() < 1e-5;
-        for i in 0..240 {
-            let t = i as f32 / 30.;
-            let new = evaluate_walking(t);
-            let old = walking_reference(t * 8.);
+    fn walking_is_smooth_and_finite() {
+        let mut prev = evaluate_walking(0.);
+        for i in 1..600 {
+            let f = evaluate_walking(i as f32 / 60.);
+            assert!(f.body_pos.is_finite() && f.head_rot.is_finite() && f.cape_x.is_finite());
             for j in 0..2 {
-                assert!(
-                    same(rot(new.arms[j]), conj(rot(old.arms[j]))),
-                    "arm {j} at {t}"
-                );
-                assert!(
-                    same(rot(new.legs[j]), conj(rot(old.legs[j]))),
-                    "leg {j} at {t}"
-                );
+                assert!((f.legs[j].x - prev.legs[j].x).abs() < 0.15, "leg jump at {i}");
+                assert!((f.arms[j].x - prev.arms[j].x).abs() < 0.15, "arm jump at {i}");
             }
-            assert!(same(rot(new.head_rot), conj(rot(old.head_rot))));
-            assert!(same(rot(new.body_rot), conj(rot(old.body_rot))));
-            // 披风欧拉的取反已被组合里的 Ry(π) 吸收,换基前后同值
-            assert!((new.cape_x - old.cape_x).abs() < 1e-5);
+            assert!((f.body_pos.y - prev.body_pos.y).abs() < 0.2, "bounce jump at {i}");
+            prev = f;
         }
     }
 

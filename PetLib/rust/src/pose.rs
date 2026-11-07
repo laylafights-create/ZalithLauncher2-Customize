@@ -5,7 +5,7 @@ use glam::{EulerRot, Mat4, Quat, Vec2, Vec3};
 use crate::animation::{evaluate_walking, AnimFrame, AnimationId, WALKING_PERIOD};
 use crate::clip::{self, ClipPose, IdleClips};
 use crate::clip_data::{CLIP_IDLE, CLIP_INTERACT};
-use crate::clip_fun::ALL_SUBS;
+use crate::clip_fun::{ALL_SUBS, CAPE_POSE};
 
 /// 攻击动画时长 (20 tick/s 下的 6 tick)
 const SWING_SECONDS: f32 = 0.30;
@@ -96,6 +96,8 @@ enum Source {
     Sub(usize),
     /// 点击反应
     Interact,
+    /// 换披风时的展示姿势（单臂指天）
+    CapePose,
 }
 
 /// 一条动画轨道：来源、本地时间与淡入淡出权重。
@@ -146,7 +148,7 @@ impl Track {
     }
 
     fn is_oneshot(&self) -> bool {
-        matches!(self.source, Source::Sub(_) | Source::Interact)
+        matches!(self.source, Source::Sub(_) | Source::Interact | Source::CapePose)
     }
 }
 
@@ -379,6 +381,80 @@ impl Skeleton {
             .push(Track::oneshot(Source::Interact, clip::INTERACT_DURATION));
     }
 
+    /// Phát emote theo chỉ số trong ALL_SUBS (như bánh xe emote); phát lại sẽ chuyển mượt sang emote mới.
+    pub fn play_emote(&mut self, index: usize) {
+        if index >= ALL_SUBS.len() {
+            return;
+        }
+        for track in &mut self.tracks {
+            if track.is_oneshot() || track.is_base() {
+                track.target = 0.;
+            }
+        }
+        self.tracks
+            .push(Track::oneshot(Source::Sub(index), clip::clip_duration(&ALL_SUBS[index])));
+    }
+
+    /// Huỷ emote đang phát: fade ra và quay lại animation nền.
+    pub fn cancel_emote(&mut self) {
+        let mut cancelled = false;
+        for track in &mut self.tracks {
+            if track.is_oneshot() && track.target == 1. {
+                track.target = 0.;
+                cancelled = true;
+            }
+        }
+        if !cancelled {
+            return;
+        }
+        if let Some((AnimationId::Idle, ..)) = self.animation {
+            self.idle_clips.rebase();
+        }
+        let base = self
+            .tracks
+            .iter_mut()
+            .filter(|t| t.is_base())
+            .max_by(|a, b| a.weight.total_cmp(&b.weight));
+        match base {
+            Some(base) => {
+                base.time = 0.;
+                base.target = 1.;
+            }
+            None => {
+                if let Some((id, _, _)) = self.animation {
+                    let source = match id {
+                        AnimationId::Idle => Source::Idle,
+                        AnimationId::Walking => Source::Walking,
+                    };
+                    self.tracks.push(Track::base_fade_in(source));
+                }
+            }
+        }
+    }
+
+    /// Số emote có thể phát
+    pub fn emote_count(&self) -> usize {
+        ALL_SUBS.len()
+    }
+
+    /// 播放换披风展示姿势（单臂指天）；播放中重复调用会从头重播。
+    pub fn play_cape_pose(&mut self) {
+        for track in &mut self.tracks {
+            if track.is_oneshot() {
+                track.target = 0.;
+            }
+        }
+        self.tracks.push(Track::oneshot(
+            Source::CapePose,
+            clip::clip_duration(&CAPE_POSE),
+        ));
+    }
+
+    /// 换披风展示姿势的时长（秒）
+    pub fn cape_pose_duration(&self) -> f32 {
+        clip::clip_duration(&CAPE_POSE)
+    }
+
     /// 播放点按压扁。`now` 仅为兼容保留，内部使用有界相位计时。
     pub fn squash_tap(&mut self, _now: f32) {
         self.squash_phase = Some(0.);
@@ -483,6 +559,7 @@ impl Skeleton {
             Source::Walking => snapshot_from_frame(evaluate_walking(track.time), cape_z),
             Source::Sub(index) => snapshot_from_pose(clip::sample(&ALL_SUBS[index], track.time)),
             Source::Interact => snapshot_from_pose(clip::sample(&CLIP_INTERACT, track.time)),
+            Source::CapePose => snapshot_from_pose(clip::sample(&CAPE_POSE, track.time)),
         }
     }
 
@@ -495,12 +572,14 @@ impl Skeleton {
             if track.weight <= 0. {
                 continue;
             }
+            // Ease-in-out cho chuyển cảnh (smoothstep đối xứng nên tổng trọng số vẫn = 1)
+            let w = smooth(track.weight);
             let pose = self.sample_track(track, cape_z);
             acc = Some(match acc {
                 None => pose,
-                Some(s) => s.blend(pose, track.weight / (acc_weight + track.weight)),
+                Some(s) => s.blend(pose, w / (acc_weight + w)),
             });
-            acc_weight += track.weight;
+            acc_weight += w;
         }
         let mut result = acc.unwrap_or_else(|| Self::rest_snapshot(cape_z));
         if acc_weight < 1. {
@@ -884,6 +963,27 @@ mod tests {
             s.head,
             s.head_rot
         );
+    }
+
+    #[test]
+    fn emote_play_and_cancel() {
+        let mut s = Skeleton::new();
+        let view = Vec2::new(450., 525.);
+        for i in 0..30 {
+            s.update(view, i as f32 / 60., 1. / 60.);
+        }
+        s.play_emote(5);
+        assert!(s.tracks.iter().any(|t| t.source == Source::Sub(5) && t.target == 1.));
+        s.play_emote(9999); // chỉ số ngoài phạm vi: bỏ qua
+        for i in 0..30 {
+            s.update(view, 1. + i as f32 / 60., 1. / 60.);
+        }
+        s.cancel_emote();
+        for i in 0..60 {
+            s.update(view, 2. + i as f32 / 60., 1. / 60.);
+        }
+        assert!(!s.tracks.iter().any(|t| matches!(t.source, Source::Sub(_))));
+        assert!(s.tracks.iter().any(|t| t.is_base() && t.target == 1.));
     }
 
     #[test]

@@ -138,6 +138,31 @@ impl PetModel {
         self.skeleton.play_interact();
     }
 
+    /// Phát emote theo chỉ số (0..emote_count).
+    pub fn play_emote(&mut self, index: usize) {
+        self.skeleton.play_emote(index);
+    }
+
+    /// Huỷ emote đang phát.
+    pub fn cancel_emote(&mut self) {
+        self.skeleton.cancel_emote();
+    }
+
+    /// Số emote.
+    pub fn emote_count(&self) -> usize {
+        self.skeleton.emote_count()
+    }
+
+    /// 换披风展示姿势（单臂指天）。
+    pub fn play_cape_pose(&mut self) {
+        self.skeleton.play_cape_pose();
+    }
+
+    /// 展示姿势时长（秒）。
+    pub fn cape_pose_duration(&self) -> f32 {
+        self.skeleton.cape_pose_duration()
+    }
+
     /// 攻击摆臂。
     pub fn play_swing(&mut self, now: f32) {
         self.skeleton.click(now);

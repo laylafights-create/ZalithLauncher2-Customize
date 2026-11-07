@@ -67,6 +67,12 @@ final class PetLibNative {
 
     static native void nativePlayInteract(long ptr);
 
+    static native void nativePlayCapePose(long ptr);
+
+    static native void nativePlayEmote(long ptr, int index);
+
+    static native void nativeCancelEmote(long ptr);
+
     /**
      * 渲染一帧，结果直写 bitmap 的像素内存（RGBA_8888、行连续、尺寸匹配）
      */

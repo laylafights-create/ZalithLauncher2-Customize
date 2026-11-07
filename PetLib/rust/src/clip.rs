@@ -321,9 +321,9 @@ mod tests {
 
     #[test]
     fn fun_clips_are_finite_and_return_to_rest() {
-        use crate::clip_fun::ALL_SUBS;
+        use crate::clip_fun::{ALL_SUBS, CAPE_POSE};
         assert!(ALL_SUBS.len() > CLIP_SUBS.len());
-        for clip in ALL_SUBS.iter() {
+        for clip in ALL_SUBS.iter().chain(std::iter::once(&CAPE_POSE)) {
             let duration = clip_duration(clip);
             assert!(duration > 0.5);
             for i in 0..=30 {

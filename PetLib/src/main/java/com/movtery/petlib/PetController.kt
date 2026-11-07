@@ -137,7 +137,7 @@ class PetController(
         cape: ByteArray?,
         onError: ((String) -> Unit)? = null,
         showOff: Boolean = true,
-        showOffMillis: Long = 2500L
+        showOffMillis: Long = 3000L
     ) {
         post {
             val error = PetLibNative.nativeSetCape(ptr, cape)
@@ -152,7 +152,10 @@ class PetController(
 
     private val recenterAfterShowOff = Runnable { recenterYaw() }
 
-    /** Quay lưng khoe cape, giữ một lúc rồi xoay lại. Gọi trên luồng render. */
+    /**
+     * Khoe cape: xoay lưng, giơ một tay lên trời, rồi xoay lại khi hạ tay.
+     * Gọi trên luồng render. Tay hạ xuống khoảng 3,1s; mặc định xoay lại lúc 3,0s để mượt.
+     */
     private fun showOffCape(holdMillis: Long) {
         handler.removeCallbacks(recenterAfterShowOff)
         val current = PetLibNative.nativeGetYaw(ptr)
@@ -160,6 +163,7 @@ class PetController(
         val next = current + wrapPi(defaultYaw + Math.PI.toFloat() - current)
         yawTarget = next
         PetLibNative.nativeSetYaw(ptr, next)
+        PetLibNative.nativePlayCapePose(ptr)
         handler.postDelayed(recenterAfterShowOff, holdMillis)
     }
 
@@ -300,6 +304,16 @@ class PetController(
      */
     fun playSwing(now: Float) {
         post { PetLibNative.nativePlaySwing(ptr, now) }
+    }
+
+    /** Phát một emote; đang phát emote khác thì chuyển mượt sang emote mới. */
+    fun playEmote(emote: PetEmote) {
+        post { PetLibNative.nativePlayEmote(ptr, emote.id) }
+    }
+
+    /** Huỷ emote đang phát, fade về animation nền. */
+    fun cancelEmote() {
+        post { PetLibNative.nativeCancelEmote(ptr) }
     }
 
     /**
