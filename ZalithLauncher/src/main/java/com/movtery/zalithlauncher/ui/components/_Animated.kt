@@ -42,11 +42,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.movtery.zalithlauncher.utils.animation.EaseOutFluent
 import com.movtery.zalithlauncher.utils.animation.EnterTranslateEasing
+import com.movtery.zalithlauncher.utils.animation.ExitEasing
 import com.movtery.zalithlauncher.utils.animation.SwapTimeline
 
 /**
@@ -118,6 +120,8 @@ fun Modifier.animated(
     distance: Dp = 40.dp,
     fade: Boolean = true
 ): Modifier = this.graphicsLayer {
+    //只调制透明度，避免透明度 < 1 时为整块内容开离屏缓冲，减少掉帧
+    compositingStrategy = CompositingStrategy.ModulateAlpha
     val progress = ctx.progress.value
     val direction = if (from == AnimatedDirection.Auto) ctx.defaultDirection else from
     if (direction != AnimatedDirection.None) {
@@ -170,7 +174,7 @@ private fun swapAnimateProgressAsState(
         tween(
             durationMillis = SwapTimeline.swapTime(SwapTimeline.EXIT_ITEM),
             delayMillis = SwapTimeline.exitStagger(index),
-            easing = LinearEasing
+            easing = ExitEasing
         )
     }
     return swapAnimateProgressAsState(isVisible = isVisible, animationSpec = spec)

@@ -38,7 +38,8 @@ fun <E> getAnimateTween(
     delayMillis: Int = 0
 ): FiniteAnimationSpec<E> = tween(
     durationMillis = durationMillis,
-    delayMillis = delayMillis
+    delayMillis = delayMillis,
+    easing = SmoothEasing
 )
 
 fun <E> getEnterTween(

@@ -87,6 +87,13 @@ private val SCOPES = listOf("XboxLive.signin", "offline_access", "openid", "prof
 private const val TENANT = "/consumers"
 
 /**
+ * Dự phòng khi bản build không có OAUTH_CLIENT_ID.
+ * Dán Application (client) ID của app Azure vào đây nếu không đặt được qua build config.
+ */
+private const val FALLBACK_CLIENT_ID = ""
+private val CLIENT_ID: String get() = BuildKeys.OAUTH_CLIENT_ID.ifBlank { FALLBACK_CLIENT_ID }
+
+/**
  * 轮询令牌时允许的最大连续网络失败次数
  * 网络环境较差时，偶发的失败不应中断登录，但持续失败说明网络不可用，应提前放弃
  */
@@ -102,7 +109,7 @@ const val MINECRAFT_SERVICES_URL = "https://api.minecraftservices.com"
  * client_id 为空时，Microsoft 会直接返回 400，这里提前给出明确的错误
  */
 private fun requireClientId() {
-    if (BuildKeys.OAUTH_CLIENT_ID.isBlank()) {
+    if (CLIENT_ID.isBlank()) {
         throw IllegalStateException("OAUTH_CLIENT_ID is empty, the Azure app client id was not set at build time")
     }
 }
@@ -130,7 +137,7 @@ suspend fun fetchDeviceCodeResponse(context: CoroutineContext): DeviceCodeRespon
             submitForm<DeviceCodeResponse>(
                 url = "$MICROSOFT_AUTH_URL$TENANT/oauth2/v2.0/devicecode",
                 parameters = Parameters.build {
-                    append("client_id", BuildKeys.OAUTH_CLIENT_ID)
+                    append("client_id", CLIENT_ID)
                     append("scope", SCOPES.joinToString(" "))
                 },
                 context = context
@@ -175,7 +182,7 @@ suspend fun getTokenResponse(
                     formParameters = Parameters.build {
                         append("grant_type", "urn:ietf:params:oauth:grant-type:device_code")
                         append("device_code", codeResponse.deviceCode)
-                        append("client_id", BuildKeys.OAUTH_CLIENT_ID)
+                        append("client_id", CLIENT_ID)
                         append("tenant", TENANT)
                     }
                 ) {
@@ -315,7 +322,7 @@ private suspend fun refreshAccessToken(
             val response = submitForm<JsonObject>(
                 url = "$MICROSOFT_AUTH_URL$TENANT/oauth2/v2.0/token",
                 parameters = Parameters.build {
-                    append("client_id", BuildKeys.OAUTH_CLIENT_ID)
+                    append("client_id", CLIENT_ID)
                     append("refresh_token", refreshToken)
                     append("grant_type", "refresh_token")
                     append("scope", SCOPES.joinToString(" "))

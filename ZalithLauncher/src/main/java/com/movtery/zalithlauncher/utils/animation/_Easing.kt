@@ -18,6 +18,7 @@
 
 package com.movtery.zalithlauncher.utils.animation
 
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Easing
 import kotlin.math.cos
 import kotlin.math.pow
@@ -44,10 +45,14 @@ class EaseOutBack(power: Int) : Easing {
 /**
  * 进场位移合成曲线
  */
-val EnterTranslateEasing = Easing { fraction ->
-    //进场位移第一段曲线
-    val first = 5f * EaseOutFluent(3).transform((fraction * 350f / 250f).coerceAtMost(1f))
-    //进场位移第二段曲线
-    val second = 11f * EaseOutBack(3).transform(fraction)
-    (first + second) / 16f
-}
+val EnterTranslateEasing: Easing = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
+
+/**
+ * 退场曲线：先慢后快，避免线性退场的生硬感
+ */
+val ExitEasing: Easing = CubicBezierEasing(0.3f, 0f, 0.8f, 0.15f)
+
+/**
+ * 通用平滑曲线（Material 强调减速）
+ */
+val SmoothEasing: Easing = CubicBezierEasing(0.2f, 0f, 0f, 1f)

@@ -39,6 +39,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -81,7 +82,7 @@ fun TextRailItem(
     unselectedContentColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     enabled: Boolean = true
 ) {
-    val animationProgress by animateFloatAsState(
+    val animationProgress = animateFloatAsState(
         targetValue = if (selected) 1f else 0f,
         animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
         label = "SelectionAnimation"
@@ -97,11 +98,12 @@ fun TextRailItem(
         Canvas(
             modifier = Modifier
                 .matchParentSize()
-                .alpha(animationProgress)
+                .graphicsLayer { alpha = animationProgress.value }
         ) {
+            val progress = animationProgress.value
             val maxWidth = size.width
             val minWidth = 0f
-            val currentWidth = minWidth + (maxWidth - minWidth) * animationProgress
+            val currentWidth = minWidth + (maxWidth - minWidth) * progress
 
             val left = (maxWidth - currentWidth) / 2
 

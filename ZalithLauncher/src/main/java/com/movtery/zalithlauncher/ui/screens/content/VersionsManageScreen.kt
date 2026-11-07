@@ -19,6 +19,18 @@
 package com.movtery.zalithlauncher.ui.screens.content
 
 import androidx.compose.foundation.background
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.Constraints
+import com.movtery.zalithlauncher.utils.animation.SmoothEasing
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.draw.rotate
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -285,8 +297,17 @@ fun VersionsManageScreen(
         screenKey = NormalNavKey.VersionsManager,
         currentKey = backScreenViewModel.mainScreen.currentKey
     ) { isVisible ->
+        // Bấm vào một mục ở menu trái thì menu tự ẩn; bấm tab nhỏ ở mép trái để mở lại.
+        var menuOpen by remember { mutableStateOf(true) }
+        // Đọc giá trị animation ở pha layout để không recompose mỗi khung hình
+        val menuFraction = animateFloatAsState(
+            targetValue = if (menuOpen) 1f else 0f,
+            animationSpec = tween(240, easing = SmoothEasing),
+            label = "VersionsMenuWidth"
+        )
         Row {
             LeftMenu(
+                onItemClick = { menuOpen = false },
                 isVisible = isVisible,
                 isRefreshing = isRefreshing,
                 swapToFileSelector = { path ->
@@ -308,13 +329,25 @@ fun VersionsManageScreen(
                 },
                 modifier = Modifier
                     .fillMaxHeight()
-                    .weight(2.5f)
+                    .clipToBounds()
+                    .layout { measurable, constraints ->
+                        //内容始终按完整宽度（总宽的 25%）测量，只裁剪可见宽度，避免动画中内容反复重排
+                        val full = (constraints.maxWidth * 0.25f).roundToInt()
+                        val placeable = measurable.measure(
+                            Constraints.fixed(full, constraints.maxHeight)
+                        )
+                        val w = (full * menuFraction.value).roundToInt()
+                        layout(w, placeable.height) { placeable.placeRelative(0, 0) }
+                    }
             )
 
-            VersionsLayout(
+            Box(
                 modifier = Modifier
                     .fillMaxHeight()
-                    .weight(7.5f),
+                    .weight(1f)
+            ) {
+            VersionsLayout(
+                modifier = Modifier.fillMaxSize(),
                 isVisible = isVisible,
                 isRefreshing = isRefreshing,
                 versions = versions,
@@ -337,6 +370,29 @@ fun VersionsManageScreen(
                     backScreenViewModel.navigateToDownload()
                 }
             )
+            AnimatedVisibility(
+                visible = !menuOpen,
+                modifier = Modifier.align(Alignment.CenterStart),
+                enter = fadeIn(tween(160)),
+                exit = fadeOut(tween(100))
+            ) {
+                Box(
+                    modifier = Modifier
+                        .width(24.dp)
+                        .height(44.dp)
+                        .background(McColors.Panel)
+                        .clickable { menuOpen = true },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        modifier = Modifier.size(22.dp).rotate(-90f),
+                        painter = painterResource(R.drawable.ic_arrow_drop_down_rounded),
+                        tint = McColors.TextSecondary,
+                        contentDescription = null
+                    )
+                }
+            }
+            }
 
             CleanupOperation(
                 operation = viewModel.cleanupOperation,
@@ -364,6 +420,7 @@ fun VersionsManageScreen(
 
 @Composable
 private fun LeftMenu(
+    onItemClick: () -> Unit,
     isVisible: Boolean,
     isRefreshing: Boolean,
     swapToFileSelector: (path: String) -> Unit,
@@ -401,6 +458,7 @@ private fun LeftMenu(
                     selected = currentPath == pathItem.path,
                     enabled = canHandlePermission,
                     onClick = {
+                        onItemClick()
                         if (!isRefreshing) { //避免频繁刷新，防止currentGameInfo意外重置
                             if (pathItem.id == GamePathManager.DEFAULT_ID) {
                                 GamePathManager.saveDefaultPath()
@@ -433,6 +491,7 @@ private fun LeftMenu(
                 .fillMaxWidth(),
             enabled = canHandlePermission,
             onClick = {
+                onItemClick()
                 (context as? MainActivity)?.let { activity ->
                     checkStoragePermissions(
                         activity = activity,
@@ -457,7 +516,7 @@ private fun LeftMenu(
                 .padding(horizontal = 10.dp)
                 .padding(top = 8.dp, bottom = 10.dp)
                 .fillMaxWidth(),
-            onClick = onCleanupGameFiles
+            onClick = { onItemClick(); onCleanupGameFiles() }
         ) {
             Text(
                 text = stringResource(R.string.versions_manage_cleanup),

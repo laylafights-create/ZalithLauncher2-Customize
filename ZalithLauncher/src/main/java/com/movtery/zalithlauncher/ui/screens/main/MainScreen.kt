@@ -29,7 +29,14 @@ import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.rotate
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.runtime.derivedStateOf
+import com.movtery.zalithlauncher.utils.animation.SmoothEasing
+import kotlin.math.roundToInt
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.fadeIn
@@ -197,17 +204,29 @@ fun MainScreen(
         Row(modifier = Modifier.fillMaxSize()) {
             // Vào Tin tức / Tải xuống / Chơi chung / Cài đặt thì thanh bên thu gọn để nhường chỗ cho nội dung;
             // bấm nút mũi tên quay lại ở thanh trên để mở lại.
-            val sidebarCollapsed = inNews || inDownload || inMultiplayer || inSettings
-            val sidebarWidth by animateDpAsState(
-                targetValue = if (sidebarCollapsed) 0.dp else 190.dp,
-                animationSpec = tween(200),
+            // Bấm vào bất kỳ mục nào trên thanh bên thì thanh bên tự ẩn; bấm tab nhỏ ở mép trái để mở lại.
+            var sidebarOpen by remember { mutableStateOf(true) }
+            val sidebarCollapsed = !sidebarOpen
+            val hideSidebar: () -> Unit = { sidebarOpen = false }
+            // Chỉ đọc giá trị animation ở pha layout: không recompose cả màn hình mỗi khung hình
+            val sidebarFraction = animateFloatAsState(
+                targetValue = if (sidebarCollapsed) 0f else 1f,
+                animationSpec = tween(240, easing = SmoothEasing),
                 label = "SidebarWidth"
             )
+            val sidebarVisible by remember { derivedStateOf { sidebarFraction.value > 0.001f } }
             Box(
                 modifier = Modifier
-                    .width(sidebarWidth)
                     .fillMaxHeight()
                     .clipToBounds()
+                    .layout { measurable, constraints ->
+                        val full = 190.dp.roundToPx()
+                        val placeable = measurable.measure(
+                            Constraints.fixed(full, constraints.maxHeight)
+                        )
+                        val w = (full * sidebarFraction.value).roundToInt()
+                        layout(w, placeable.height) { placeable.placeRelative(0, 0) }
+                    }
             ) {
             MinecraftSidebar(
                 modifier = Modifier
@@ -219,23 +238,24 @@ fun MainScreen(
                 inAccounts = inAccounts,
                 inDownload = inDownload,
                 inMultiplayer = inMultiplayer,
-                toDownload = { screenBackStackModel.navigateToDownload() },
-                toMultiplayer = { navigateTop(NormalNavKey.Multiplayer) },
+                toDownload = { hideSidebar(); screenBackStackModel.navigateToDownload() },
+                toMultiplayer = { hideSidebar(); navigateTop(NormalNavKey.Multiplayer) },
                 openFileManager = {
+                    hideSidebar()
                     eventViewModel.sendEvent(
                         EventViewModel.Event.OpenFileManager(
                             rootPath = PathManager.DIR_FILES_EXTERNAL.absolutePath
                         )
                     )
                 },
-                toAccountScreen = { navigateTop(NormalNavKey.AccountManager(FirstLoginMenu.NONE)) },
-                toNewsScreen = { navigateTop(NormalNavKey.WebScreen(NEWS_URL)) },
-                toJavaEdition = { if (!inLauncherScreen) toMainScreen() },
-                toSettingsScreen = { navigateTop(screenBackStackModel.settingsScreen) }
+                toAccountScreen = { hideSidebar(); navigateTop(NormalNavKey.AccountManager(FirstLoginMenu.NONE)) },
+                toNewsScreen = { hideSidebar(); navigateTop(NormalNavKey.WebScreen(NEWS_URL)) },
+                toJavaEdition = { hideSidebar(); if (!inLauncherScreen) toMainScreen() },
+                toSettingsScreen = { hideSidebar(); navigateTop(screenBackStackModel.settingsScreen) }
             )
             }
 
-            if (sidebarWidth > 0.dp) McVerticalDivider()
+            if (sidebarVisible) McVerticalDivider()
 
             Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
                 if (inJavaSection) {
@@ -284,6 +304,30 @@ fun MainScreen(
                             modifyVersionViewModel = modifyVersionViewModel,
                             submitError = submitError
                         )
+                    }
+
+                    AnimatedVisibility(
+                        visible = !sidebarOpen,
+                        modifier = Modifier.align(Alignment.TopStart),
+                        enter = fadeIn(tween(160)),
+                        exit = fadeOut(tween(100))
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .padding(top = 8.dp)
+                                .width(24.dp)
+                                .height(44.dp)
+                                .background(McColors.Panel)
+                                .clickable { sidebarOpen = true },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                modifier = Modifier.size(22.dp).rotate(-90f),
+                                painter = painterResource(R.drawable.ic_arrow_drop_down_rounded),
+                                tint = McColors.TextSecondary,
+                                contentDescription = null
+                            )
+                        }
                     }
 
                     TaskMenu(
