@@ -18,11 +18,8 @@
 
 package com.movtery.zalithlauncher.ui.screens.content
 
-import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -30,14 +27,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialExpressiveTheme
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.nonInteractiveScrollbar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -47,10 +39,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
@@ -58,11 +47,9 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.movtery.zalithlauncher.R
-import com.movtery.zalithlauncher.context.COPY_LABEL_ACCOUNT_UUID
 import com.movtery.zalithlauncher.game.account.Account
 import com.movtery.zalithlauncher.game.account.AccountsManager
 import com.movtery.zalithlauncher.game.account.auth_server.data.AuthServer
-import com.movtery.zalithlauncher.game.account.isAuthServerAccount
 import com.movtery.zalithlauncher.game.account.isMicrosoftAccount
 import com.movtery.zalithlauncher.game.account.isMicrosoftLogging
 import com.movtery.zalithlauncher.game.account.wardrobe.toArmModel
@@ -71,11 +58,7 @@ import com.movtery.zalithlauncher.ui.AndroidStringText
 import com.movtery.zalithlauncher.ui.androidText
 import com.movtery.zalithlauncher.ui.base.BaseScreen
 import com.movtery.zalithlauncher.ui.components.AnimatedDirection
-import com.movtery.zalithlauncher.ui.components.BackgroundCard
-import com.movtery.zalithlauncher.ui.components.MarqueeText
 import com.movtery.zalithlauncher.ui.components.PetModelView
-import com.movtery.zalithlauncher.ui.components.ScalingActionButton
-import com.movtery.zalithlauncher.ui.components.ScalingLabel
 import com.movtery.zalithlauncher.ui.components.SimpleAlertDialog
 import com.movtery.zalithlauncher.ui.components.SimpleEditDialog
 import com.movtery.zalithlauncher.ui.components.SimpleListDialog
@@ -83,10 +66,7 @@ import com.movtery.zalithlauncher.ui.components.SimpleListItem
 import com.movtery.zalithlauncher.ui.components.animated
 import com.movtery.zalithlauncher.ui.components.rememberAnimatedContext
 import com.movtery.zalithlauncher.ui.screens.NormalNavKey
-import com.movtery.zalithlauncher.ui.screens.content.elements.AccountItem
 import com.movtery.zalithlauncher.ui.screens.content.elements.AccountOperation
-import com.movtery.zalithlauncher.ui.screens.content.elements.AccountSkinOperation
-import com.movtery.zalithlauncher.ui.screens.content.elements.ChangeSkinDialog
 import com.movtery.zalithlauncher.ui.screens.content.elements.LocalLoginDialog
 import com.movtery.zalithlauncher.ui.screens.content.elements.LocalLoginOperation
 import com.movtery.zalithlauncher.ui.screens.content.elements.LoginMenuDialog
@@ -100,7 +80,6 @@ import com.movtery.zalithlauncher.ui.screens.content.elements.OtherLoginOperatio
 import com.movtery.zalithlauncher.ui.screens.content.elements.SkinCapePanel
 import com.movtery.zalithlauncher.ui.screens.content.elements.OtherServerLoginDialog
 import com.movtery.zalithlauncher.ui.screens.content.elements.ServerOperation
-import com.movtery.zalithlauncher.utils.copyText
 import com.movtery.zalithlauncher.utils.string.getMessageOrToString
 import com.movtery.zalithlauncher.viewmodel.AccountManageEffect
 import com.movtery.zalithlauncher.viewmodel.AccountManageIntent
@@ -704,8 +683,8 @@ private fun ServerTypeOperation(
 }
 
 /**
- * Trang Skin kiểu minecraft.net: thẻ tài khoản hiện tại (làm mới / xoá / sao chép UUID)
- * ở trên, bên dưới là panel chọn skin và cape.
+ * Trang Skin kiểu minecraft.net: chỉ còn panel đổi skin và cape chiếm toàn bộ cột phải
+ * (không còn thẻ tài khoản / nút "Thêm tài khoản"; đổi hoặc thêm tài khoản thực hiện ở thanh bên).
  */
 @Composable
 private fun SkinPageLayout(
@@ -750,158 +729,6 @@ private fun SkinPageLayout(
                 currentAccount?.let { actions.onIntent(AccountManageIntent.FetchMicrosoftCapes(it)) }
             }
         )
-    }
-}
-
-/**
- * 账号列表组件
- */
-@Composable
-private fun AccountsLayout(
-    isVisible: Boolean,
-    modifier: Modifier = Modifier,
-    accounts: List<Account>,
-    currentAccount: Account?,
-    accountOperation: AccountOperation,
-    accountSkinOperation: AccountSkinOperation,
-    accountSkinDialogState: AccountManageViewModel.AccountSkinDialogState,
-    accountCapes: Map<String, List<PlayerProfile.Cape>>,
-    actions: AccountActions
-) {
-    val ctx = rememberAnimatedContext(isVisible = isVisible)
-    val context = LocalContext.current
-
-    AccountOperation(accountOperation, actions)
-
-    AccountSkinOperation(
-        accountSkinOperation = accountSkinOperation,
-        skinDialogState = accountSkinDialogState,
-        accountCapes = accountCapes,
-        actions = actions
-    )
-
-    BackgroundCard(
-        modifier = modifier.animated(ctx),
-        shape = MaterialTheme.shapes.extraLarge
-    ) {
-        if (accounts.isNotEmpty()) {
-            val scrollState = rememberLazyListState()
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .nonInteractiveScrollbar(
-                        state = scrollState.scrollIndicatorState!!,
-                        orientation = Orientation.Vertical,
-                    )
-                    .clip(MaterialTheme.shapes.extraLarge),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                state = scrollState,
-            ) {
-                items(accounts, key = { it.uniqueUUID }) { account ->
-                    AccountItem(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 6.dp),
-                        currentAccount = currentAccount,
-                        account = account,
-                        onSelected = { AccountsManager.setCurrentAccount(it) },
-                        openChangeSkinDialog = {
-                            if (!account.isAuthServerAccount()) {
-                                actions.onIntent(
-                                    AccountManageIntent.UpdateAccountSkinOp(
-                                        AccountSkinOperation.ChangeSkin(account)
-                                    )
-                                )
-                            }
-                        },
-                        onRefreshClick = {
-                            actions.onIntent(
-                                AccountManageIntent.RefreshAccount(
-                                    account
-                                )
-                            )
-                        },
-                        onCopyUUID = {
-                            copyText(COPY_LABEL_ACCOUNT_UUID, account.profileId, context, true)
-                        },
-                        onDeleteClick = {
-                            actions.onIntent(
-                                AccountManageIntent.UpdateAccountOp(
-                                    AccountOperation.Delete(account)
-                                )
-                            )
-                        }
-                    )
-                }
-            }
-        } else {
-            Box(modifier = Modifier.fillMaxSize()) {
-                ScalingLabel(
-                    modifier = Modifier.align(Alignment.Center),
-                    text = stringResource(R.string.account_no_account)
-                )
-            }
-        }
-    }
-}
-
-/**
- * 账号皮肤操作逻辑处理
- */
-@Composable
-private fun AccountSkinOperation(
-    accountSkinOperation: AccountSkinOperation,
-    skinDialogState: AccountManageViewModel.AccountSkinDialogState,
-    accountCapes: Map<String, List<PlayerProfile.Cape>>,
-    actions: AccountActions
-) {
-    when (accountSkinOperation) {
-        is AccountSkinOperation.None -> {}
-        is AccountSkinOperation.ChangeSkin -> {
-            val account = accountSkinOperation.account
-            ChangeSkinDialog(
-                account = account,
-                availableCapes = accountCapes[account.uniqueUUID],
-                skinState = skinDialogState.pendingSkinData,
-                onSkinStateChange = { skinState ->
-                    actions.onIntent(
-                        AccountManageIntent.UpdatePendingSkinData(
-                            skinState
-                        )
-                    )
-                },
-                capeState = skinDialogState.pendingCapeData,
-                onCapeStateChange = { capeState ->
-                    actions.onIntent(
-                        AccountManageIntent.UpdatePendingCapeData(
-                            capeState
-                        )
-                    )
-                },
-                isImportingSkin = skinDialogState.importingSkin,
-                onSkinPicked = { uri ->
-                    actions.onIntent(
-                        AccountManageIntent.OnSkinPicked(uri)
-                    )
-                },
-                onDismissRequest = {
-                    actions.onIntent(AccountManageIntent.ResetAccountSkinDialogState)
-                    actions.onIntent(AccountManageIntent.UpdateAccountSkinOp(AccountSkinOperation.None))
-                },
-                onResetSkin = {
-                    actions.onIntent(AccountManageIntent.ResetSkin(account))
-                },
-                onFetchCapes = {
-                    actions.onIntent(AccountManageIntent.FetchMicrosoftCapes(account))
-                },
-                onApplySkin = { file, model ->
-                    actions.onIntent(AccountManageIntent.ApplySkin(account, file, model))
-                },
-                onApplyCape = { cape ->
-                    actions.onIntent(AccountManageIntent.ApplyMicrosoftCape(account, cape))
-                }
-            )
-        }
     }
 }
 
