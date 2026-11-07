@@ -90,7 +90,7 @@ private const val TENANT = "/consumers"
  * Dự phòng khi bản build không có OAUTH_CLIENT_ID.
  * Dán Application (client) ID của app Azure vào đây nếu không đặt được qua build config.
  */
-private const val FALLBACK_CLIENT_ID = ""
+private const val FALLBACK_CLIENT_ID = "7852d7bd-28d9-4cb8-9e5a-96fb2590f02e"
 private val CLIENT_ID: String
     get() = BuildKeys.OAUTH_CLIENT_ID.trim().ifBlank { FALLBACK_CLIENT_ID.trim() }
 

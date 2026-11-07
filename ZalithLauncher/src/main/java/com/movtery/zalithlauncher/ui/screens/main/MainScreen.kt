@@ -79,6 +79,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.CompositionLocalProvider
@@ -200,14 +201,17 @@ fun MainScreen(
         contentColor = McColors.TextPrimary
     ) {
         Row(modifier = Modifier.fillMaxSize()) {
-            // Thanh bên luôn hiển thị (đã bỏ nút ẩn/hiện thanh bên)
+            // Thanh bên chỉ hiện ở màn hình chính (tab "Chơi").
+            // Vào bất kỳ mục nào khác (Bản cài đặt, Skin, Tải xuống, Chơi chung, Cài đặt...) thì thanh bên tự ẩn
+            // để nhường chỗ cho nội dung; quay lại tab "Chơi" / nút quay lại thì thanh bên hiện lại.
             val hideSidebar: () -> Unit = {}
+            // Chỉ đọc giá trị animation ở pha layout: không recompose cả màn hình mỗi khung hình
             val sidebarFraction = animateFloatAsState(
-                targetValue = 1f,
+                targetValue = if (inLauncherScreen) 1f else 0f,
                 animationSpec = tween(240, easing = SmoothEasing),
                 label = "SidebarWidth"
             )
-            val sidebarVisible = true
+            val sidebarVisible by remember { derivedStateOf { sidebarFraction.value > 0.001f } }
             Box(
                 modifier = Modifier
                     .fillMaxHeight()
