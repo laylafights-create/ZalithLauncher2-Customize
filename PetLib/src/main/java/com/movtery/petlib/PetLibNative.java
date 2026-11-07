@@ -57,9 +57,7 @@ final class PetLibNative {
 
     static native float nativeGetYaw(long ptr);
 
-    static native void nativePlayAnimation(long ptr, int id, float speed, boolean headFollow);
-
-    static native void nativeStopAnimation(long ptr);
+    static native void nativeSetHeadFollow(long ptr, boolean enabled);
 
     static native void nativePlayCapePose(long ptr);
 

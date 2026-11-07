@@ -2,7 +2,7 @@
 
 use glam::{EulerRot, Mat4, Quat, Vec2, Vec3};
 
-use crate::animation::{AnimFrame, AnimationId};
+use crate::animation::AnimFrame;
 use crate::clip::{self, ClipPose};
 use crate::clip_fun::CAPE_POSE;
 
@@ -73,8 +73,7 @@ pub fn view_quat() -> Quat {
         * Quat::from_rotation_x(-(23f32 / (30f32 * 30f32 + 70f32 * 70f32).sqrt()).atan())
 }
 
-/// Nguồn chuyển động: chỉ còn hành động khoe cape. Mọi thứ khác (idle, đi bộ, emote, chạm...) đã bị loại bỏ,
-/// nhân vật đứng yên ở tư thế nghỉ.
+/// Nguồn chuyển động: chỉ có hành động khoe cape; ngoài ra nhân vật đứng yên ở tư thế nghỉ.
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum Source {
     /// 换披风时的展示姿势（单臂指天）
@@ -185,9 +184,8 @@ pub struct Skeleton {
     gaze_target: Option<Vec2>,
     yaw_target: f32,
 
-    /// Trạng thái "nền": chỉ còn quyết định đầu có bám theo con trỏ hay không (Some(.., true)).
-    /// Không còn chuyển động idle/đi bộ nào, nhân vật luôn ở tư thế nghỉ.
-    animation: Option<(AnimationId, f32, bool)>,
+    /// Đầu có bám theo con trỏ hay không. Nhân vật luôn đứng yên ở tư thế nghỉ ngoài hành động khoe cape.
+    follow_gaze: bool,
     /// Track hành động khoe cape (đang phát và đang fade-out cùng tồn tại, trộn theo thứ tự chèn).
     tracks: Vec<Track>,
 
@@ -211,10 +209,6 @@ pub struct Skeleton {
     pub cape: Vec2,
     /// 头部最终局部旋转
     pub head: Quat,
-    /// Luôn 1.0 (đã bỏ hiệu ứng nhún khi chạm); render.rs vẫn đọc giá trị này.
-    pub squash: f32,
-    /// Luôn 0.0 (đã bỏ hiệu ứng vung tay); render.rs vẫn đọc giá trị này.
-    pub body_yaw: f32,
 }
 
 impl Default for Skeleton {
@@ -234,7 +228,7 @@ impl Skeleton {
             zoom: 1.,
             gaze_target: None,
             yaw_target: 0.,
-            animation: Some((AnimationId::Idle, 1., true)),
+            follow_gaze: true,
             tracks: Vec::new(),
             gaze: Vec2::ZERO,
             gaze_yaw_cut: false,
@@ -250,8 +244,6 @@ impl Skeleton {
             head_pos: 0.,
             cape: Vec2::ZERO,
             head: Quat::IDENTITY,
-            squash: 1.,
-            body_yaw: 0.,
         }
     }
 
@@ -273,18 +265,12 @@ impl Skeleton {
     }
 
     pub fn head_follow(&self) -> bool {
-        self.animation.is_some_and(|(_, _, follow)| follow)
+        self.follow_gaze
     }
 
-    /// Đặt chế độ nền. Chỉ ảnh hưởng việc đầu có bám theo con trỏ hay không;
-    /// không còn idle/đi bộ: nhân vật luôn đứng yên ở tư thế nghỉ.
-    pub fn play_animation(&mut self, id: AnimationId, speed: f32, head_follow: bool) {
-        self.animation = Some((id, speed.max(0.01), head_follow));
-    }
-
-    /// Tắt chế độ nền (đầu ngừng bám con trỏ). Hành động khoe cape đang chạy không bị ảnh hưởng.
-    pub fn stop_animation(&mut self) {
-        self.animation = None;
+    /// Bật/tắt việc đầu bám theo con trỏ. Không ảnh hưởng hành động khoe cape đang chạy.
+    pub fn set_head_follow(&mut self, enabled: bool) {
+        self.follow_gaze = enabled;
     }
 
     /// 播放换披风展示姿势（单臂指天）；播放中重复调用会从头重播。
@@ -434,10 +420,6 @@ impl Skeleton {
             .head
             .slerp(head_target, 1. - (-dt / tau).exp())
             .normalize();
-
-        // Đã bỏ nhún khi chạm và vung tay: giữ cố định.
-        self.squash = 1.;
-        self.body_yaw = 0.;
     }
 
     /// 以相机隐含距离解算指向光标的 yaw/pitch（未按颈部活动范围夹取）。
@@ -654,7 +636,7 @@ mod tests {
     fn stands_perfectly_still_without_cape_pose() {
         let mut s = Skeleton::new();
         let view = Vec2::new(450., 525.);
-        // 20 giây: trước đây idle/emote ngẫu nhiên sẽ kích hoạt trong khoảng này.
+        // 20 giây không có hành động nào được phát.
         for i in 0..(60 * 20) {
             s.update(view, i as f32 / 60., 1. / 60.);
             assert!(s.tracks.is_empty(), "no tracks expected: {:?}", s.tracks);
@@ -663,8 +645,6 @@ mod tests {
             assert!(s.legs.iter().all(|q| q.abs_diff_eq(Quat::IDENTITY, 1e-6)));
             assert_eq!(s.leg_pivots, LEG_REST_PIVOTS);
             assert_eq!(s.arm_pivots, ARM_REST_PIVOTS);
-            assert_eq!(s.squash, 1.);
-            assert_eq!(s.body_yaw, 0.);
         }
         assert!((s.cape.x - std::f32::consts::PI * 0.06).abs() < 0.01);
     }
@@ -706,13 +686,13 @@ mod tests {
         }
     }
 
-    /// stop_animation chỉ tắt việc đầu bám con trỏ, không cắt hành động khoe cape.
+    /// Tắt bám con trỏ không cắt hành động khoe cape.
     #[test]
-    fn stop_animation_keeps_cape_pose() {
+    fn disabling_head_follow_keeps_cape_pose() {
         let mut s = Skeleton::new();
         let view = Vec2::new(450., 525.);
         s.play_cape_pose();
-        s.stop_animation();
+        s.set_head_follow(false);
         assert!(!s.head_follow());
         for i in 0..30 {
             s.update(view, i as f32 / 60., 1. / 60.);

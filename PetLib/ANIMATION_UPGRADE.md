@@ -14,10 +14,11 @@
 - Khoe cape (`CAPE_POSE`, 3.65s) khi `setCape(...)` với `showOff = true`; sinh bởi `tools/gen_fun_clips.py`.
 - Đầu bám theo con trỏ (gaze), kéo để xoay (`rotateYaw`), zoom, ánh sáng, skin/cape.
 
-## Tương thích API (Kotlin)
-`playEmote`, `cancelEmote`, `playInteract`, `squashTap`, `playSwing`, `setSquashDepth`, `PetEmote`, `PetTapReaction` vẫn còn nhưng là
-no-op / `@Deprecated` để mã gọi cũ không phải sửa. `playAnimation(...)` chỉ còn quyết định `headFollow`; `stopAnimation()`/`setStill(true)`
-tắt việc đầu bám con trỏ nhưng không cắt hiệu ứng khoe cape.
+## API sau khi dọn
+Đã xoá hẳn (không còn stub): `playEmote`, `cancelEmote`, `playInteract`, `squashTap`, `playSwing`, `setSquashDepth`, `playAnimation`,
+`stopAnimation`, `setStill`, `PetEmote`, `PetAnimation`, `PetTapReaction` và tham số `tapReaction` của `PetPreview`.
+Thay bằng `PetController.setHeadFollow(enabled)` (đầu có bám con trỏ hay không; màn Skin nên tắt). Hiệu ứng khoe cape không bị ảnh hưởng.
+JNI: `nativePlayAnimation`/`nativeStopAnimation` -> `nativeSetHeadFollow`. Rust: `Skeleton::set_head_follow`, bỏ `AnimationId`, `squash`, `body_yaw`.
 
 ## Cách dùng
 Sau khi sửa `tools/gen_fun_clips.py`: `python3 tools/gen_fun_clips.py` để sinh lại `rust/src/clip_fun.rs`.
@@ -30,10 +31,16 @@ Chạy `cargo test` trong `PetLib/rust` để xác nhận.
 - Thời lượng clip 5.4s (+0.5s đuôi). `showOffMillis` mặc định đổi 3000 -> 4900ms; vòng xoay trên không lúc bật cao do `PetController.showOffCape` đặt yaw theo 4 bước 90°.
 
 ## Màn hình Skin: đứng yên + phóng to
-- `PetController.setStill(true)`: nhân vật giữ tư thế nghỉ, đầu không bám con trỏ. Hành động khoe cape khi `setCape(...)` vẫn chạy rồi về tư thế nghỉ.
-  `setStill(false)` cho đầu bám con trỏ trở lại (dùng khi rời màn hình Skin).
+- `PetController.setHeadFollow(false)`: đầu không bám con trỏ. Hành động khoe cape khi `setCape(...)` vẫn chạy rồi về tư thế nghỉ.
+  `setHeadFollow(true)` cho đầu bám lại (dùng khi rời màn hình Skin).
 - `PetController.setZoom(1.5f)`: phóng to quanh tâm khung (0.25..4, 1 = mặc định). Rust: `PetModel::set_zoom`, JNI `nativeSetZoom`.
 - Ví dụ ở màn hình Skin:
-    controller.setStill(true)
+    controller.setHeadFollow(false)
     controller.setZoom(1.5f)
     controller.setCape(capeBytes)   // vẫn khoe cape như cũ
+
+## Tối ưu hiệu năng
+- `PetController`: khi không còn gì thay đổi (không có lệnh mới, không khoe cape, các bộ làm mượt đã hội tụ sau 1,5s) thì **ngừng vẽ lại**
+  khung hình y hệt; màn hình giữ khung cuối đã đăng. Mọi lệnh đi qua `post{}` / đổi kích thước surface / khoe cape tự đánh dấu "cần vẽ" lại.
+  Nhân vật đứng yên giờ tốn ~0% CPU thay vì rasterize liên tục ở 60fps.
+- `tools/gen_fun_clips.py`: kênh hằng (pivot hai tay) chỉ xuất 1 key; `clip_fun.rs` nhỏ đi ~9% (69,9KB -> 63,4KB nguồn).

@@ -1,13 +1,5 @@
 use glam::Vec3;
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum AnimationId {
-    /// Nền đứng yên (giữ API cũ; không còn chuyển động idle)
-    Idle,
-    /// Giữ để tương thích API; không còn dáng đi, vẫn đứng yên
-    Walking,
-}
-
 /// 单帧动画姿态
 /// 所有欧拉角为绝对值，弧度 (x, y, z)，XYZ 序，原始 GLTF 基
 #[derive(Clone, Copy)]

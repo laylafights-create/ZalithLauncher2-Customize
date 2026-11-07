@@ -6,7 +6,6 @@ use jni::objects::{JByteArray, JClass, JObject, JString};
 use jni::sys::{jboolean, jfloat, jint, jlong};
 use jni::JNIEnv;
 
-use crate::animation::AnimationId;
 use crate::api::{LightingParams, PetModel};
 use crate::skin::ArmModel;
 
@@ -99,16 +98,6 @@ fn arm_from(code: jint) -> Option<ArmModel> {
     match code {
         0 => Some(ArmModel::Classic),
         1 => Some(ArmModel::Slim),
-        _ => None,
-    }
-}
-
-/// 动画编码
-/// 0 待机，1 行走
-fn animation_from(code: jint) -> Option<AnimationId> {
-    match code {
-        0 => Some(AnimationId::Idle),
-        1 => Some(AnimationId::Walking),
         _ => None,
     }
 }
@@ -377,32 +366,16 @@ pub extern "system" fn Java_com_movtery_petlib_PetLibNative_nativeGetYaw(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_movtery_petlib_PetLibNative_nativePlayAnimation(
+pub extern "system" fn Java_com_movtery_petlib_PetLibNative_nativeSetHeadFollow(
     _env: JNIEnv,
     _class: JClass,
     ptr: jlong,
-    id: jint,
-    speed: jfloat,
-    head_follow: jboolean,
-) {
-    guard(|| {
-        // SAFETY: 句柄由宿主渲染线程独占使用。
-        if let (Some(model), Some(id)) = (unsafe { model_from(ptr) }, animation_from(id)) {
-            model.play_animation(id, speed, head_follow != 0);
-        }
-    })
-}
-
-#[no_mangle]
-pub extern "system" fn Java_com_movtery_petlib_PetLibNative_nativeStopAnimation(
-    _env: JNIEnv,
-    _class: JClass,
-    ptr: jlong,
+    enabled: jboolean,
 ) {
     guard(|| {
         // SAFETY: 句柄由宿主渲染线程独占使用。
         if let Some(model) = unsafe { model_from(ptr) } {
-            model.stop_animation();
+            model.set_head_follow(enabled != 0);
         }
     })
 }

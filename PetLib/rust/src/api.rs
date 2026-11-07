@@ -2,7 +2,6 @@
 
 use glam::Vec2;
 
-use crate::animation::AnimationId;
 use crate::lighting::Lighting;
 use crate::pose::Skeleton;
 use crate::render::{self, Frame};
@@ -120,12 +119,9 @@ impl PetModel {
         self.skeleton.model_yaw()
     }
 
-    pub fn play_animation(&mut self, id: AnimationId, speed: f32, head_follow: bool) {
-        self.skeleton.play_animation(id, speed, head_follow);
-    }
-
-    pub fn stop_animation(&mut self) {
-        self.skeleton.stop_animation();
+    /// Bật/tắt việc đầu bám theo con trỏ.
+    pub fn set_head_follow(&mut self, enabled: bool) {
+        self.skeleton.set_head_follow(enabled);
     }
 
     /// 换披风展示姿势（单臂指天）。
@@ -274,7 +270,7 @@ mod tests {
         let (w, h) = (300usize, 400usize);
         let coverage = |zoom: f32| {
             let mut model = test_model();
-            model.stop_animation();
+            model.set_head_follow(false);
             model.set_zoom(zoom);
             let mut buf = vec![0u8; w * h * 4];
             for i in 0..30 {

@@ -32,6 +32,7 @@ import androidx.annotation.FloatRange
 import androidx.core.graphics.createBitmap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.PI
 
@@ -39,6 +40,16 @@ private const val TAG = "PetLib"
 
 /** 连续锁画布失败达到该次数后，判定表面已失效并停止帧驱动 */
 private const val SURFACE_FAILURE_LIMIT = 10
+
+/**
+ * Sau lần thay đổi trạng thái cuối cùng, vẫn vẽ tiếp chừng này mili-giây để các bộ làm mượt
+ * (nhìn theo con trỏ, xoay, fade...) kịp hội tụ. Quá thời gian đó mà không có gì thay đổi
+ * thì ngừng vẽ để khỏi tốn CPU/pin cho một khung hình y hệt.
+ */
+private const val ACTIVE_LINGER_MILLIS = 1500L
+
+/** Khung cape + đuôi 0,5s + dư: luôn vẽ đủ lâu để hiệu ứng khoe cape chạy hết. */
+private const val SHOW_OFF_ACTIVE_MILLIS = 6500L
 
 /**
  * 帧间隔下限
@@ -102,6 +113,8 @@ class PetController(
     private var attachedSurface: Surface? = null
     private val surfaceRef = AtomicReference<Surface?>(null)
     private val frameInFlight = AtomicBoolean(false)
+    // Thời điểm (nanoTime) trước đó khung hình còn cần vẽ; sau đó nhân vật đứng yên hẳn nên bỏ qua khung.
+    private val activeUntilNanos = AtomicLong(0L)
     private val widthHint = AtomicInteger(0)
     private val heightHint = AtomicInteger(0)
 
@@ -180,6 +193,7 @@ class PetController(
         yawTarget = next
         PetLibNative.nativeSetYaw(ptr, next)
         PetLibNative.nativePlayCapePose(ptr)
+        markActive(maxOf(SHOW_OFF_ACTIVE_MILLIS, holdMillis + ACTIVE_LINGER_MILLIS))
         leapSpinSteps.forEachIndexed { i, step -> handler.postDelayed(step, 780L + i * 125L) }
         // Màn kết xong ~4,6s; quay lại lúc holdMillis (tối thiểu 4,3s)
         handler.postDelayed(recenterAfterShowOff, maxOf(holdMillis, 4300L))
@@ -244,11 +258,6 @@ class PetController(
         post { PetLibNative.nativeSetHeadRange(ptr, x, y) }
     }
 
-    /** Đã bỏ hiệu ứng nhún khi chạm; giữ lại để mã gọi cũ vẫn biên dịch được, không còn tác dụng. */
-    @Deprecated("Hiệu ứng nhún đã bị loại bỏ; hàm này không làm gì.")
-    @Suppress("UNUSED_PARAMETER")
-    fun setSquashDepth(@FloatRange(.0, 30.0) depth: Float) = Unit
-
     /**
      * Phóng to nhân vật quanh tâm khung hình.
      * @param zoom 1 = mặc định; ví dụ 1.5 để to hơn 50% (giới hạn 0.25..4)
@@ -257,24 +266,13 @@ class PetController(
         post { PetLibNative.nativeSetZoom(ptr, zoom) }
     }
 
-    @Volatile
-    private var still = false
-
     /**
-     * Chế độ đứng yên (dùng cho màn hình Skin): đầu không bám theo con trỏ.
-     * Nhân vật vốn luôn đứng yên ở tư thế nghỉ; hành động khoe cape khi [setCape] (showOff = true) vẫn chạy.
-     * Tắt chế độ này để đầu bám theo con trỏ trở lại.
+     * Đầu có bám theo con trỏ hay không (mặc định có). Nhân vật luôn đứng yên ở tư thế nghỉ;
+     * hành động khoe cape khi [setCape] (showOff = true) chạy bất kể giá trị này.
+     * Màn hình Skin nên tắt để đầu giữ nguyên.
      */
-    fun setStill(enabled: Boolean) {
-        still = enabled
-        post {
-            cancelShowOffCallbacks()
-            if (enabled) {
-                PetLibNative.nativeStopAnimation(ptr)
-            } else {
-                PetLibNative.nativePlayAnimation(ptr, PetAnimation.Idle.id, 1f, true)
-            }
-        }
+    fun setHeadFollow(enabled: Boolean) {
+        post { PetLibNative.nativeSetHeadFollow(ptr, enabled) }
     }
 
     /**
@@ -322,43 +320,6 @@ class PetController(
     }
 
     /**
-     * Idle/đi bộ đã bị loại bỏ: nhân vật luôn đứng yên ở tư thế nghỉ.
-     * Hàm này chỉ còn quyết định [headFollow] (đầu có bám theo con trỏ hay không); [animation] và [speed] bị bỏ qua.
-     */
-    fun playAnimation(animation: PetAnimation, speed: Float = 1f, headFollow: Boolean = true) {
-        if (still) return
-        post { PetLibNative.nativePlayAnimation(ptr, animation.id, speed, headFollow) }
-    }
-
-    /** Tắt việc đầu bám theo con trỏ (không cắt hành động khoe cape đang chạy). */
-    fun stopAnimation() {
-        post { PetLibNative.nativeStopAnimation(ptr) }
-    }
-
-    /** Đã bỏ hiệu ứng nhún khi chạm; giữ lại để mã gọi cũ biên dịch được, không còn tác dụng. */
-    @Deprecated("Hiệu ứng nhún đã bị loại bỏ; hàm này không làm gì.")
-    @Suppress("UNUSED_PARAMETER")
-    fun squashTap(now: Float) = Unit
-
-    /** Đã bỏ hiệu ứng vung tay; giữ lại để mã gọi cũ biên dịch được, không còn tác dụng. */
-    @Deprecated("Hiệu ứng vung tay đã bị loại bỏ; hàm này không làm gì.")
-    @Suppress("UNUSED_PARAMETER")
-    fun playSwing(now: Float) = Unit
-
-    /** Đã bỏ emote; giữ lại để mã gọi cũ biên dịch được, không còn tác dụng. */
-    @Deprecated("Emote đã bị loại bỏ; hàm này không làm gì.")
-    @Suppress("UNUSED_PARAMETER")
-    fun playEmote(emote: PetEmote) = Unit
-
-    /** Đã bỏ emote; giữ lại để mã gọi cũ biên dịch được, không còn tác dụng. */
-    @Deprecated("Emote đã bị loại bỏ; hàm này không làm gì.")
-    fun cancelEmote() = Unit
-
-    /** Đã bỏ phản ứng chạm; giữ lại để mã gọi cũ biên dịch được, không còn tác dụng. */
-    @Deprecated("Phản ứng chạm đã bị loại bỏ; hàm này không làm gì.")
-    fun playInteract() = Unit
-
-    /**
      * 归一化坐标命中测试，结果异步回到调用方的回调
      * @param x 横坐标（0..1）
      * @param y 纵坐标（0..1）
@@ -391,6 +352,7 @@ class PetController(
     }
 
     internal fun updateSurfaceSize(width: Int, height: Int) {
+        markActive()
         widthHint.set(width)
         heightHint.set(height)
     }
@@ -424,8 +386,15 @@ class PetController(
         handler.looper.quitSafely()
     }
 
+    /** Đánh dấu cần vẽ tiếp thêm [millis] mili-giây (chỉ kéo dài, không bao giờ rút ngắn). */
+    private fun markActive(millis: Long = ACTIVE_LINGER_MILLIS) {
+        val until = System.nanoTime() + millis * 1_000_000L
+        activeUntilNanos.accumulateAndGet(until) { a, b -> maxOf(a, b) }
+    }
+
     private fun post(block: () -> Unit) {
         if (released) return
+        markActive()
 
         handler.post {
             if (!released && ptr != 0L) block()
@@ -484,6 +453,12 @@ class PetController(
 
         // 帧率上限：跳过的帧不推进计时基准，帧间隔随之累积，动画按真实时间推进不受采样率影响
         val startedNanos = System.nanoTime()
+        // Đứng yên và không còn gì đang hội tụ: bỏ qua khung (màn hình giữ nguyên khung cuối đã đăng).
+        // Đặt lại mốc thời gian để khung đầu tiên khi hoạt động trở lại dùng dt chuẩn thay vì dt tích luỹ.
+        if (startedNanos > activeUntilNanos.get()) {
+            lastRenderNanos = 0L
+            return
+        }
         if (lastRenderNanos != 0L && startedNanos - lastRenderNanos < MIN_FRAME_INTERVAL_NANOS) {
             return
         }

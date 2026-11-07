@@ -262,7 +262,10 @@ def emit(out, const, doc, dur, fn):
     out.append(f"/// {doc}\n#[rustfmt::skip]\npub(crate) static {const}: Clip = Clip {{\n    channels: &[\n")
     for j in ("Body", "Head", "ArmRight", "ArmLeft", "LegRight", "LegLeft", "Cape"):
         rot = ", ".join("[" + ", ".join(f(c) for c in q) + "]" for q in ch[j])
-        trs = ", ".join("[" + ", ".join(f(c) for c in v) + "]" for v in tr[j]) if j in tr else ""
+        keys = tr.get(j, [])
+        if keys and all(k == keys[0] for k in keys):
+            keys = keys[:1]  # kênh hằng (vd. pivot tay): 1 key là đủ, sampler trả thẳng keys[0]
+        trs = ", ".join("[" + ", ".join(f(c) for c in v) + "]" for v in keys)
         out.append(f"        Channel {{\n            joint: Joint::{j},\n            rotation: &[{rot}],\n            translation: &[{trs}],\n        }},\n")
     out.append("    ],\n};\n")
 

@@ -63,8 +63,7 @@ pub(crate) fn parts_into(pose: &Skeleton, scene: &SceneParams, v: &mut Vec<BoxPa
     // 腿挂在静态髋部下，不随躯干位移/旋转，枢轴由剪辑平移通道驱动以钉住脚底。
     // 各部件平移均为相对髋部的局部偏移，几何偏移以模型像素为单位。
     let body_chain = Mat4::from_translation(Vec3::new(0., 12., 0.) + flip_vec(pose.body_pos))
-        * Mat4::from_quat(flip_quat(pose.body_rot))
-        * Mat4::from_rotation_y(pose.body_yaw);
+        * Mat4::from_quat(flip_quat(pose.body_rot));
     let hip = Mat4::from_translation(Vec3::new(0., 12., 0.));
     {
         let mut part = |parent: Mat4,
@@ -183,13 +182,6 @@ pub(crate) fn parts_into(pose: &Skeleton, scene: &SceneParams, v: &mut Vec<BoxPa
             mirror: false,
             tex: Tex::Cape,
         });
-    }
-    // 压扁以脚底为锚，双脚下沉为零，头顶随脉冲下压。
-    let anchor = Mat4::from_translation(Vec3::Y * -12.)
-        * Mat4::from_scale(Vec3::new(1., pose.squash, 1.))
-        * Mat4::from_translation(Vec3::Y * 12.);
-    for part in v.iter_mut() {
-        part.transform = anchor * part.transform;
     }
     // Phóng to quanh tâm khung (project() dịch gốc về y = 15 trước khi chiếu).
     let zoom = pose.zoom.clamp(0.25, 4.);

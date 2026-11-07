@@ -37,24 +37,15 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlin.math.PI
 
-/** Phản ứng khi chạm vào mô hình. Đã bị loại bỏ: mọi giá trị đều không còn tác dụng, giữ enum để tương thích API. */
-enum class PetTapReaction {
-    None,
-    Squash,
-    Interact
-}
-
 /**
  * 玩家模型预览组件
  *
- * @param tapReaction đã bỏ (không còn phản ứng chạm); giữ tham số để tương thích API
  * @param dragYaw 是否响应拖拽旋转偏航
  */
 @Composable
 fun PetPreview(
     controller: PetController,
     modifier: Modifier = Modifier,
-    tapReaction: PetTapReaction = PetTapReaction.Squash,
     dragYaw: Boolean = true,
 ) {
     val gestureModifier = if (dragYaw) {
