@@ -29,12 +29,10 @@ import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.rotate
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.Constraints
-import androidx.compose.runtime.derivedStateOf
 import com.movtery.zalithlauncher.utils.animation.SmoothEasing
 import kotlin.math.roundToInt
 import androidx.compose.animation.core.animateDpAsState
@@ -190,7 +188,6 @@ fun MainScreen(
             mainScreenKey is NestedNavKey.VersionExport
     val inAccounts = mainScreenKey is NormalNavKey.AccountManager
     val inPatchNotes = webUrl == PATCH_NOTES_URL
-    val inNews = webUrl != null && !inPatchNotes
     val inSettings = mainScreenKey is NestedNavKey.Settings
     val inDownload = mainScreenKey is NestedNavKey.Download
     val inMultiplayer = mainScreenKey is NormalNavKey.Multiplayer
@@ -203,19 +200,14 @@ fun MainScreen(
         contentColor = McColors.TextPrimary
     ) {
         Row(modifier = Modifier.fillMaxSize()) {
-            // Vào Tin tức / Tải xuống / Chơi chung / Cài đặt thì thanh bên thu gọn để nhường chỗ cho nội dung;
-            // bấm nút mũi tên quay lại ở thanh trên để mở lại.
-            // Bấm vào bất kỳ mục nào trên thanh bên thì thanh bên tự ẩn; bấm tab nhỏ ở mép trái để mở lại.
-            var sidebarOpen by remember { mutableStateOf(true) }
-            val sidebarCollapsed = !sidebarOpen
-            val hideSidebar: () -> Unit = { sidebarOpen = false }
-            // Chỉ đọc giá trị animation ở pha layout: không recompose cả màn hình mỗi khung hình
+            // Thanh bên luôn hiển thị (đã bỏ nút ẩn/hiện thanh bên)
+            val hideSidebar: () -> Unit = {}
             val sidebarFraction = animateFloatAsState(
-                targetValue = if (sidebarCollapsed) 0f else 1f,
+                targetValue = 1f,
                 animationSpec = tween(240, easing = SmoothEasing),
                 label = "SidebarWidth"
             )
-            val sidebarVisible by remember { derivedStateOf { sidebarFraction.value > 0.001f } }
+            val sidebarVisible = true
             Box(
                 modifier = Modifier
                     .fillMaxHeight()
@@ -234,7 +226,6 @@ fun MainScreen(
                     .requiredWidth(190.dp)
                     .fillMaxHeight(),
                 inJavaEdition = inJavaSection,
-                inNews = inNews,
                 inSettings = inSettings,
                 inAccounts = inAccounts,
                 inDownload = inDownload,
@@ -250,7 +241,6 @@ fun MainScreen(
                     )
                 },
                 toAccountScreen = { hideSidebar(); navigateTop(NormalNavKey.AccountManager(FirstLoginMenu.NONE)) },
-                toNewsScreen = { hideSidebar(); navigateTop(NormalNavKey.WebScreen(NEWS_URL)) },
                 toJavaEdition = { hideSidebar(); if (!inLauncherScreen) toMainScreen() },
                 toSettingsScreen = { hideSidebar(); navigateTop(screenBackStackModel.settingsScreen) }
             )
@@ -307,30 +297,6 @@ fun MainScreen(
                         )
                     }
 
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = !sidebarOpen,
-                        modifier = Modifier.align(Alignment.TopStart),
-                        enter = fadeIn(tween(160)),
-                        exit = fadeOut(tween(100))
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .padding(top = 8.dp)
-                                .width(24.dp)
-                                .height(44.dp)
-                                .background(McColors.Panel)
-                                .clickable { sidebarOpen = true },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                modifier = Modifier.size(22.dp).rotate(-90f),
-                                painter = painterResource(R.drawable.ic_arrow_drop_down_rounded),
-                                tint = McColors.TextSecondary,
-                                contentDescription = null
-                            )
-                        }
-                    }
-
                     TaskMenu(
                         isExpanded = isTaskMenuExpanded,
                         modifier = Modifier
@@ -347,7 +313,6 @@ fun MainScreen(
     }
 }
 
-private const val NEWS_URL = "https://www.minecraft.net/en-us/articles"
 private const val PATCH_NOTES_URL = "https://feedback.minecraft.net/hc/en-us/sections/360001186971-Release-Changelogs"
 
 /**
@@ -357,7 +322,6 @@ private const val PATCH_NOTES_URL = "https://feedback.minecraft.net/hc/en-us/sec
 @Composable
 private fun MinecraftSidebar(
     inJavaEdition: Boolean,
-    inNews: Boolean,
     inSettings: Boolean,
     inAccounts: Boolean,
     inDownload: Boolean,
@@ -366,7 +330,6 @@ private fun MinecraftSidebar(
     toMultiplayer: () -> Unit,
     openFileManager: () -> Unit,
     toAccountScreen: () -> Unit,
-    toNewsScreen: () -> Unit,
     toJavaEdition: () -> Unit,
     toSettingsScreen: () -> Unit,
     modifier: Modifier = Modifier,
@@ -392,12 +355,6 @@ private fun MinecraftSidebar(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-            SidebarItem(
-                selected = inNews,
-                painter = painterResource(R.drawable.ic_article_outlined),
-                label = stringResource(R.string.mc_sidebar_news),
-                onClick = toNewsScreen
-            )
             SidebarItem(
                 selected = inJavaEdition,
                 painter = painterResource(R.drawable.ic_play_arrow_filled),

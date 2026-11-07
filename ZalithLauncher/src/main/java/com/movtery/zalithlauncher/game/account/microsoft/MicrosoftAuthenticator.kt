@@ -91,7 +91,8 @@ private const val TENANT = "/consumers"
  * Dán Application (client) ID của app Azure vào đây nếu không đặt được qua build config.
  */
 private const val FALLBACK_CLIENT_ID = ""
-private val CLIENT_ID: String get() = BuildKeys.OAUTH_CLIENT_ID.ifBlank { FALLBACK_CLIENT_ID }
+private val CLIENT_ID: String
+    get() = BuildKeys.OAUTH_CLIENT_ID.trim().ifBlank { FALLBACK_CLIENT_ID.trim() }
 
 /**
  * 轮询令牌时允许的最大连续网络失败次数
@@ -110,7 +111,11 @@ const val MINECRAFT_SERVICES_URL = "https://api.minecraftservices.com"
  */
 private fun requireClientId() {
     if (CLIENT_ID.isBlank()) {
-        throw IllegalStateException("OAUTH_CLIENT_ID is empty, the Azure app client id was not set at build time")
+        throw IllegalStateException(
+            "Chưa có OAUTH_CLIENT_ID (Azure Application client ID). " +
+                "Hãy đặt nó khi build (file .oauth_client_id.txt / biến môi trường OAUTH_CLIENT_ID / oauth_client_id trong gradle.properties) " +
+                "hoặc điền vào FALLBACK_CLIENT_ID trong MicrosoftAuthenticator.kt"
+        )
     }
 }
 
