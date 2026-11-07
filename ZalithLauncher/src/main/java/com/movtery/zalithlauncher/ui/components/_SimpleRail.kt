@@ -40,11 +40,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
+import com.movtery.zalithlauncher.ui.theme.McColors
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.movtery.zalithlauncher.ui.screens.content.elements.DisabledAlpha
@@ -74,8 +75,8 @@ fun TextRailItem(
     selected: Boolean,
     selectedPadding: PaddingValues = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
     unSelectedPadding: PaddingValues = selectedPadding,
-    shape: Shape = MaterialTheme.shapes.extraLarge,
-    backgroundColor: Color = MaterialTheme.colorScheme.secondaryContainer,
+    shape: Shape = RectangleShape,
+    backgroundColor: Color = McColors.Panel,
     selectedContentColor: Color = MaterialTheme.colorScheme.onSecondaryContainer,
     unselectedContentColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     enabled: Boolean = true
@@ -104,12 +105,16 @@ fun TextRailItem(
 
             val left = (maxWidth - currentWidth) / 2
 
-            //绘制胶囊形状背景
-            drawRoundRect(
+            //Minecraft: nền vuông + vạch xanh lá ở cạnh dưới
+            drawRect(
                 color = backgroundColor,
                 topLeft = Offset(left, 0f),
-                size = Size(currentWidth, size.height),
-                cornerRadius = CornerRadius(size.height / 2, size.height / 2)
+                size = Size(currentWidth, size.height)
+            )
+            drawRect(
+                color = McColors.PlayGreenLight,
+                topLeft = Offset(left, size.height - 3.dp.toPx()),
+                size = Size(currentWidth, 3.dp.toPx())
             )
         }
 

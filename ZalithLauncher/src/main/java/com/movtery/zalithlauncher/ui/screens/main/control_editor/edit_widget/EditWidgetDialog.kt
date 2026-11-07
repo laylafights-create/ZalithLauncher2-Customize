@@ -42,7 +42,7 @@ import androidx.compose.foundation.verticalScroll
 import com.movtery.zalithlauncher.ui.components.Button
 import com.movtery.zalithlauncher.ui.components.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationRailItem
+import com.movtery.zalithlauncher.ui.components.NavigationRailItem
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable

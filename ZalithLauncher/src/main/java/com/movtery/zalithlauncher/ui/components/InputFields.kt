@@ -80,7 +80,7 @@ fun SimpleTextInputField(
     influencedByBackground: Boolean = true,
     color: Color = cardColor(influencedByBackground),
     contentColor: Color = onCardColor(),
-    shape: Shape = RoundedCornerShape(percent = 50),
+    shape: Shape = RoundedCornerShape(2.dp),
     blur: Int = AllSettings.backgroundBlur.state,
     contextPadding: PaddingValues = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
     textStyle: TextStyle = TextStyle(color = contentColor).copy(fontSize = 12.sp),

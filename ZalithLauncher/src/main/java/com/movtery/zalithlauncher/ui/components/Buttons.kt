@@ -33,7 +33,8 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.RectangleShape
+import com.movtery.zalithlauncher.ui.theme.McColors
 import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ButtonElevation
@@ -226,8 +227,8 @@ fun TouchableButton(
     text: String
 ) {
     Surface(
-        shape = CircleShape,
-        color = ButtonDefaults.buttonColors().containerColor,
+        shape = RectangleShape,
+        color = McColors.Stone,
         contentColor = ButtonDefaults.buttonColors().contentColor,
         modifier = modifier
             .semantics { role = Role.Button }

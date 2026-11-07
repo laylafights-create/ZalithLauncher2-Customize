@@ -26,12 +26,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
@@ -151,62 +150,24 @@ enum class CardPosition {
 /**
  * 根据 UI 组件在组中的位置决定的形状
  */
+/**
+ * Phong cách Minecraft: mọi thẻ đều vuông vức, bất kể vị trí trong nhóm.
+ * Các tham số [outerShape] / [innerShape] được giữ lại để không phải sửa chỗ gọi.
+ */
 @Composable
+@Suppress("UNUSED_PARAMETER")
 fun rememberSettingsCardShape(
     position: CardPosition,
-    outerShape: Dp = 28.dp,
-    innerShape: Dp = 4.dp
-): Shape {
-    return remember(position, outerShape, innerShape) {
-        when (position) {
-            CardPosition.Top -> RoundedCornerShape(
-                topStart = outerShape,
-                topEnd = outerShape,
-                bottomStart = innerShape,
-                bottomEnd = innerShape
-            )
-            CardPosition.TopStart -> RoundedCornerShape(
-                topStart = outerShape,
-                topEnd = innerShape,
-                bottomStart = innerShape,
-                bottomEnd = innerShape
-            )
-            CardPosition.TopEnd -> RoundedCornerShape(
-                topStart = innerShape,
-                topEnd = outerShape,
-                bottomStart = innerShape,
-                bottomEnd = innerShape
-            )
-            CardPosition.Middle -> RoundedCornerShape(innerShape)
-            CardPosition.Bottom -> RoundedCornerShape(
-                topStart = innerShape,
-                topEnd = innerShape,
-                bottomStart = outerShape,
-                bottomEnd = outerShape
-            )
-            CardPosition.BottomStart -> RoundedCornerShape(
-                topStart = innerShape,
-                topEnd = innerShape,
-                bottomStart = outerShape,
-                bottomEnd = innerShape
-            )
-            CardPosition.BottomEnd -> RoundedCornerShape(
-                topStart = innerShape,
-                topEnd = innerShape,
-                bottomStart = innerShape,
-                bottomEnd = outerShape
-            )
-            CardPosition.Single -> RoundedCornerShape(outerShape)
-        }
-    }
-}
+    outerShape: Dp = 0.dp,
+    innerShape: Dp = 0.dp
+): Shape = RectangleShape
 
 @Composable
 fun SettingsCard(
     modifier: Modifier = Modifier,
     position: CardPosition,
-    outerShape: Dp = 28.dp,
-    innerShape: Dp = 4.dp,
+    outerShape: Dp = 0.dp,
+    innerShape: Dp = 0.dp,
     content: @Composable ColumnScope.() -> Unit
 ) {
     val shape = rememberSettingsCardShape(position, outerShape, innerShape)
@@ -222,8 +183,8 @@ fun SettingsCard(
 fun SettingsCard(
     modifier: Modifier = Modifier,
     position: CardPosition,
-    outerShape: Dp = 28.dp,
-    innerShape: Dp = 4.dp,
+    outerShape: Dp = 0.dp,
+    innerShape: Dp = 0.dp,
     onClick: () -> Unit,
     enabled: Boolean = true,
     content: @Composable ColumnScope.() -> Unit
@@ -247,8 +208,8 @@ fun SettingsCard(
     summary: String? = null,
     titleStyle: TextStyle = MaterialTheme.typography.titleSmall,
     summaryStyle: TextStyle = MaterialTheme.typography.labelSmall,
-    outerShape: Dp = 28.dp,
-    innerShape: Dp = 4.dp,
+    outerShape: Dp = 0.dp,
+    innerShape: Dp = 0.dp,
     innerPadding: PaddingValues = PaddingValues(all = 16.dp),
     onClick: () -> Unit,
     trailingIcon: (@Composable RowScope.() -> Unit)? = null,
@@ -292,7 +253,7 @@ fun SettingsCardColumn(
 ) {
     Column(
         modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+        verticalArrangement = Arrangement.spacedBy(0.dp),
         content = content
     )
 }

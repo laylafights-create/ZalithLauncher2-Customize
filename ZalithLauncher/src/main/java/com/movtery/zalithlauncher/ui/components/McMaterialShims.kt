@@ -38,6 +38,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
@@ -221,6 +222,53 @@ fun RadioButton(
                     .size(10.dp)
                     .background(McColors.PlayGreen, CircleShape)
             )
+        }
+    }
+}
+
+/**
+ * Mục thanh điều hướng bên trái (thay cho NavigationRailItem của Material 3, vốn có
+ * "viên thuốc" bo tròn). Mục đang chọn có nền sáng hơn và vạch xanh lá bên trái,
+ * giống [McSidebarItem].
+ */
+@Composable
+fun NavigationRailItem(
+    selected: Boolean,
+    onClick: () -> Unit,
+    icon: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    label: @Composable (() -> Unit)? = null,
+    @Suppress("UNUSED_PARAMETER") alwaysShowLabel: Boolean = true
+) {
+    val contentColor = if (selected) McColors.TextPrimary else McColors.TextSecondary
+    Box(
+        modifier = modifier
+            .alpha(if (enabled) 1f else 0.5f)
+            .defaultMinSize(minWidth = 72.dp)
+            .background(if (selected) McColors.Panel else androidx.compose.ui.graphics.Color.Transparent)
+            .border(1.dp, if (selected) McColors.Outline else androidx.compose.ui.graphics.Color.Transparent)
+            .drawBehind {
+                if (selected) {
+                    drawRect(
+                        color = McColors.PlayGreenLight,
+                        topLeft = androidx.compose.ui.geometry.Offset.Zero,
+                        size = androidx.compose.ui.geometry.Size(3.dp.toPx(), size.height)
+                    )
+                }
+            }
+            .clickable(enabled = enabled, role = Role.Tab, onClick = onClick)
+            .padding(vertical = 8.dp, horizontal = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        CompositionLocalProvider(LocalContentColor provides contentColor) {
+            androidx.compose.foundation.layout.Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp)
+            ) {
+                icon()
+                label?.invoke()
+            }
         }
     }
 }

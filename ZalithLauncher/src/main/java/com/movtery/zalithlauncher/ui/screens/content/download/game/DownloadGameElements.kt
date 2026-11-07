@@ -23,6 +23,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -79,6 +80,7 @@ import com.movtery.zalithlauncher.ui.androidText
 import com.movtery.zalithlauncher.ui.components.influencedByBackgroundColor
 import com.movtery.zalithlauncher.ui.components.rememberMaxHeight
 import com.movtery.zalithlauncher.ui.screens.content.elements.backgroundGlass
+import com.movtery.zalithlauncher.ui.theme.McColors
 import com.movtery.zalithlauncher.ui.theme.cardColor
 import com.movtery.zalithlauncher.ui.theme.onCardColor
 import com.movtery.zalithlauncher.utils.animation.getAnimateTween
@@ -224,7 +226,8 @@ fun <E> AddonListLayout(
         modifier = modifier,
         shape = shape,
         color = color,
-        contentColor = contentColor
+        contentColor = contentColor,
+        border = BorderStroke(1.dp, McColors.Outline)
     ) {
         Column(
             modifier = Modifier
@@ -447,7 +450,8 @@ fun AddonWarningItem(
         modifier = modifier,
         shape = MaterialTheme.shapes.large,
         color = color,
-        contentColor = contentColor
+        contentColor = contentColor,
+        border = BorderStroke(1.dp, McColors.Outline)
     ) {
         Row(
             modifier = Modifier
