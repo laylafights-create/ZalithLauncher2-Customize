@@ -1892,7 +1892,7 @@ fun CapeListItem(
 
 private val avatarPaint = Paint().apply { isFilterBitmap = false }
 
-private fun getCapeAvatar(
+internal fun getCapeAvatar(
     cape: PlayerProfile.Cape,
     size: Dp,
     density: Density

@@ -20,6 +20,7 @@ package com.movtery.zalithlauncher.ui.screens.content
 
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -96,6 +97,7 @@ import com.movtery.zalithlauncher.ui.screens.content.elements.MicrosoftLoginTipD
 import com.movtery.zalithlauncher.ui.screens.content.elements.MicrosoftReloginDialog
 import com.movtery.zalithlauncher.ui.screens.content.elements.OtherAccountReloginDialog
 import com.movtery.zalithlauncher.ui.screens.content.elements.OtherLoginOperation
+import com.movtery.zalithlauncher.ui.screens.content.elements.SkinCapePanel
 import com.movtery.zalithlauncher.ui.screens.content.elements.OtherServerLoginDialog
 import com.movtery.zalithlauncher.ui.screens.content.elements.ServerOperation
 import com.movtery.zalithlauncher.utils.copyText
@@ -141,6 +143,64 @@ enum class FirstLoginMenu {
     MICROSOFT,
     /** 打开总登录菜单 */
     NORMAL
+}
+
+/**
+ * Host dùng chung cho các hộp thoại thêm tài khoản (menu đăng nhập, Microsoft, offline, server khác).
+ * Được gọi từ thanh bên: bấm mũi tên ở thẻ tài khoản sẽ mở menu thêm tài khoản ngay tại màn hình hiện tại,
+ * không cần chuyển sang tab Skin.
+ *
+ * @param openRequest tăng giá trị này (> 0) mỗi lần muốn mở menu thêm tài khoản
+ */
+@Composable
+fun AccountLoginHost(
+    openRequest: Int,
+    backStackViewModel: ScreenBackStackViewModel,
+    openLink: (url: String) -> Unit,
+    submitError: (ErrorViewModel.ThrowableMessage) -> Unit,
+    eventViewModel: EventViewModel
+) {
+    val viewModel: AccountManageViewModel = hiltViewModel(key = "sidebar_account_login") { factory: AccountManageViewModel.Factory ->
+        factory.create(eventViewModel)
+    }
+
+    val loginUiState by viewModel.loginUiState.collectAsStateWithLifecycle()
+    val profileUiState by viewModel.profileUiState.collectAsStateWithLifecycle()
+    val operationUiState by viewModel.operationUiState.collectAsStateWithLifecycle()
+
+    val actions = remember(viewModel, openLink, backStackViewModel, submitError) {
+        AccountActions(
+            onIntent = viewModel::onIntent,
+            openLink = openLink,
+            backToMainScreen = {},
+            navigateToWeb = { url -> backStackViewModel.mainScreen.backStack.navigateToWeb(url) },
+            checkIfInWebScreen = { backStackViewModel.mainScreen.currentKey is NormalNavKey.WebScreen },
+            formatError = { th -> viewModel.formatAccountError(th) },
+            submitError = submitError,
+        )
+    }
+
+    LaunchedEffect(openRequest) {
+        if (openRequest > 0) {
+            actions.onIntent(AccountManageIntent.UpdateLoginMenuOp(LoginMenuOperation.Login))
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.effect.collect { effect ->
+            when (effect) {
+                is AccountManageEffect.ShowError -> {
+                    submitError(ErrorViewModel.ThrowableMessage(effect.title, effect.message))
+                }
+            }
+        }
+    }
+
+    LoginMenuOperation(loginUiState.menuOp, actions, profileUiState.authServers)
+    MicrosoftLoginOperation(loginUiState.microsoftOp, actions)
+    LocalLoginOperation(loginUiState.localOp, actions)
+    OtherLoginOperation(loginUiState.otherOp, actions)
+    ServerTypeOperation(operationUiState.serverOp, actions)
 }
 
 /**
@@ -244,16 +304,14 @@ private fun AccountManageContent(
             actions = actions
         )
 
-        AccountsLayout(
+        SkinPageLayout(
             isVisible = isVisible,
             modifier = Modifier
                 .fillMaxHeight()
                 .padding(top = 12.dp, end = 12.dp, bottom = 12.dp)
                 .weight(7f),
-            accounts = profileUiState.accounts,
             currentAccount = profileUiState.currentAccount,
             accountOperation = operationUiState.accountOp,
-            accountSkinOperation = operationUiState.accountSkinOp,
             accountSkinDialogState = operationUiState.accountSkinDialogState,
             accountCapes = profileUiState.accountCapeOpMap,
             actions = actions
@@ -652,6 +710,78 @@ private fun ServerTypeOperation(
         }
 
         is ServerOperation.None -> {}
+    }
+}
+
+/**
+ * Trang Skin kiểu minecraft.net: thẻ tài khoản hiện tại (làm mới / xoá / sao chép UUID)
+ * ở trên, bên dưới là panel chọn skin và cape.
+ */
+@Composable
+private fun SkinPageLayout(
+    isVisible: Boolean,
+    modifier: Modifier = Modifier,
+    currentAccount: Account?,
+    accountOperation: AccountOperation,
+    accountSkinDialogState: AccountManageViewModel.AccountSkinDialogState,
+    accountCapes: Map<String, List<PlayerProfile.Cape>>,
+    actions: AccountActions
+) {
+    val ctx = rememberAnimatedContext(isVisible = isVisible)
+    val context = LocalContext.current
+
+    AccountOperation(accountOperation, actions)
+
+    Column(
+        modifier = modifier.animated(ctx),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        if (currentAccount != null) {
+            AccountItem(
+                modifier = Modifier.fillMaxWidth(),
+                currentAccount = currentAccount,
+                account = currentAccount,
+                onSelected = {},
+                openChangeSkinDialog = {},
+                onRefreshClick = {
+                    actions.onIntent(AccountManageIntent.RefreshAccount(currentAccount))
+                },
+                onCopyUUID = {
+                    copyText(COPY_LABEL_ACCOUNT_UUID, currentAccount.profileId, context, true)
+                },
+                onDeleteClick = {
+                    actions.onIntent(
+                        AccountManageIntent.UpdateAccountOp(AccountOperation.Delete(currentAccount))
+                    )
+                }
+            )
+        }
+
+        SkinCapePanel(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            account = currentAccount,
+            availableCapes = currentAccount?.let { accountCapes[it.uniqueUUID] },
+            skinState = accountSkinDialogState.pendingSkinData,
+            isImportingSkin = accountSkinDialogState.importingSkin,
+            onSkinStateChange = { state ->
+                actions.onIntent(AccountManageIntent.UpdatePendingSkinData(state))
+            },
+            onSkinPicked = { uri -> actions.onIntent(AccountManageIntent.OnSkinPicked(uri)) },
+            onApplySkin = { file, model ->
+                currentAccount?.let { actions.onIntent(AccountManageIntent.ApplySkin(it, file, model)) }
+            },
+            onResetSkin = {
+                currentAccount?.let { actions.onIntent(AccountManageIntent.ResetSkin(it)) }
+            },
+            onApplyCape = { cape ->
+                currentAccount?.let { actions.onIntent(AccountManageIntent.ApplyMicrosoftCape(it, cape)) }
+            },
+            onFetchCapes = {
+                currentAccount?.let { actions.onIntent(AccountManageIntent.FetchMicrosoftCapes(it)) }
+            }
+        )
     }
 }
 

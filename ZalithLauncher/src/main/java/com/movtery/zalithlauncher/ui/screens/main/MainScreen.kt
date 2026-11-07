@@ -50,6 +50,10 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.runtime.mutableIntStateOf
+import com.movtery.zalithlauncher.ui.screens.content.AccountLoginHost
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.movtery.zalithlauncher.ui.components.McSidebarItem
@@ -188,12 +192,22 @@ fun MainScreen(
             mainScreenKey is NestedNavKey.VersionSettings ||
             mainScreenKey is NestedNavKey.VersionExport
     val inAccounts = mainScreenKey is NormalNavKey.AccountManager
+    // Mỗi lần tăng giá trị này, hộp thoại "Thêm tài khoản" sẽ mở ngay tại màn hình hiện tại
+    var addAccountRequest by remember { mutableIntStateOf(0) }
     val inPatchNotes = webUrl == PATCH_NOTES_URL
     val inSettings = mainScreenKey is NestedNavKey.Settings
     val inDownload = mainScreenKey is NestedNavKey.Download
     val inMultiplayer = mainScreenKey is NormalNavKey.Multiplayer
     // Các trang thuộc mục "Java Edition" có header + tab Play / Installations / Skins / Patch notes
     val inJavaSection = inLauncherScreen || inVersions || inAccounts || inPatchNotes
+
+    AccountLoginHost(
+        openRequest = addAccountRequest,
+        backStackViewModel = screenBackStackModel,
+        openLink = { url -> eventViewModel.sendEvent(EventViewModel.Event.OpenLink(url)) },
+        submitError = submitError,
+        eventViewModel = eventViewModel
+    )
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -244,7 +258,7 @@ fun MainScreen(
                         )
                     )
                 },
-                toAccountScreen = { hideSidebar(); navigateTop(NormalNavKey.AccountManager(FirstLoginMenu.NONE)) },
+                onAddAccount = { addAccountRequest++ },
                 toJavaEdition = { hideSidebar(); if (!inLauncherScreen) toMainScreen() },
                 toSettingsScreen = { hideSidebar(); navigateTop(screenBackStackModel.settingsScreen) }
             )
@@ -333,7 +347,7 @@ private fun MinecraftSidebar(
     toDownload: () -> Unit,
     toMultiplayer: () -> Unit,
     openFileManager: () -> Unit,
-    toAccountScreen: () -> Unit,
+    onAddAccount: () -> Unit,
     toJavaEdition: () -> Unit,
     toSettingsScreen: () -> Unit,
     modifier: Modifier = Modifier,
@@ -348,7 +362,7 @@ private fun MinecraftSidebar(
         SidebarAccountCard(
             account = account,
             selected = inAccounts,
-            onClick = toAccountScreen
+            onAddAccount = onAddAccount
         )
 
         androidx.compose.foundation.layout.Spacer(Modifier.height(10.dp))
@@ -404,53 +418,112 @@ private fun MinecraftSidebar(
 private fun SidebarAccountCard(
     account: com.movtery.zalithlauncher.game.account.Account?,
     selected: Boolean,
-    onClick: () -> Unit
+    onAddAccount: () -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(if (selected) McColors.PanelHigh else McColors.Panel)
-            .border(1.dp, McColors.Outline)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        if (account != null) {
-            PlayerFace(account = account, avatarSize = 36.dp)
-        } else {
+    val accounts by AccountsManager.accountsFlow.collectAsStateWithLifecycle()
+    var expanded by remember { mutableStateOf(false) }
+
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(if (selected || expanded) McColors.PanelHigh else McColors.Panel)
+                .border(1.dp, McColors.Outline)
+                .clickable { expanded = true }
+                .padding(horizontal = 10.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            if (account != null) {
+                PlayerFace(account = account, avatarSize = 36.dp)
+            } else {
+                Icon(
+                    modifier = Modifier.size(36.dp),
+                    painter = painterResource(R.drawable.ic_person_filled),
+                    tint = McColors.TextSecondary,
+                    contentDescription = null
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = account?.username ?: stringResource(R.string.account_add_new_account),
+                    color = McColors.TextPrimary,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (account != null) {
+                    Text(
+                        text = getAccountTypeName(account),
+                        color = McColors.TextMuted,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
             Icon(
-                modifier = Modifier.size(36.dp),
-                painter = painterResource(R.drawable.ic_person_filled),
+                modifier = Modifier.size(20.dp),
+                painter = painterResource(R.drawable.ic_arrow_drop_down_rounded),
                 tint = McColors.TextSecondary,
                 contentDescription = null
             )
         }
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = account?.username ?: stringResource(R.string.account_add_new_account),
-                color = McColors.TextPrimary,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            if (account != null) {
-                Text(
-                    text = getAccountTypeName(account),
-                    color = McColors.TextMuted,
-                    style = MaterialTheme.typography.labelSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+
+        // Menu thả xuống: đổi nhanh tài khoản + "Thêm tài khoản" (mở hộp thoại ngay tại chỗ, không sang tab Skin)
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier
+                .width(174.dp)
+                .background(McColors.Panel)
+        ) {
+            accounts.filter { it.uniqueUUID != account?.uniqueUUID }.forEach { other ->
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = other.username,
+                            color = McColors.TextPrimary,
+                            style = MaterialTheme.typography.labelLarge,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
+                    leadingIcon = { PlayerFace(account = other, avatarSize = 24.dp) },
+                    onClick = {
+                        expanded = false
+                        AccountsManager.setCurrentAccount(other)
+                    }
                 )
             }
+            if (accounts.size > 1) {
+                HorizontalDivider(color = McColors.Divider.copy(alpha = 0.5f), thickness = 1.dp)
+            }
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        text = stringResource(R.string.account_add_new_account),
+                        color = McColors.TextPrimary,
+                        style = MaterialTheme.typography.labelLarge,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        modifier = Modifier.size(20.dp),
+                        painter = painterResource(R.drawable.ic_person_filled),
+                        tint = McColors.TextSecondary,
+                        contentDescription = null
+                    )
+                },
+                onClick = {
+                    expanded = false
+                    onAddAccount()
+                }
+            )
         }
-        Icon(
-            modifier = Modifier.size(20.dp),
-            painter = painterResource(R.drawable.ic_arrow_drop_down_rounded),
-            tint = McColors.TextSecondary,
-            contentDescription = null
-        )
     }
 }
 
