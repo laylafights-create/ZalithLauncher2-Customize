@@ -85,3 +85,14 @@ Chạy `cargo test` trong `PetLib/rust` để xác nhận.
 - Clip dài **6,3s** (trước 5,4s). Rust lấy thời lượng từ dữ liệu clip nên không phải sửa; Kotlin: `SHOW_OFF_ACTIVE_MILLIS` 6500 -> 7500, camera dừng ở 6,2s, đẩy camera vào 4,0 – 6,1s.
 - Cape: khi thân ngang, lưng hướng lên và cape nằm phủ trên lưng (cape.x ≥ ~7°), không chui vào thân.
 - Chưa build Android/`cargo test` được trong môi trường này.
+
+## v11: sửa đầu ngửa ra sau khi cúi chào
+- Nguyên nhân: lúc clip chạy, đầu vẫn bị gaze (bám con trỏ) ghi đè và tính trong không gian thế giới, không kể góc gập của thân, nên đầu bị kéo về phía camera trong khi thân cúi -> trông như ngửa ra sau. Đầu còn trễ theo `tau_recenter` (0,35s) so với thân đang gập nhanh.
+- `pose.rs`: khi có track clip (`!tracks.is_empty()`) thì bỏ qua gaze, đầu chỉ theo clip với `tau_gaze` (0,1s). Parent của phép tính gaze nay gồm cả `body_rot`.
+- `gen_fun_clips.py`: đầu cúi thêm lúc giữ cúi (4,9s: 10 -> 16°, 5,2s: 14 -> 21°, 5,55s: 12 -> 18°); clip_fun.rs đã sinh lại.
+- Chưa chạy được `cargo test`/build Android trong môi trường này.
+
+### v11.1: animation khi quay người về mặt trước (3,0 – 4,0s)
+- Dồn lực rồi quay: thân xoắn ngược (wind-up) trước, rồi bị kéo trễ theo vòng quay và lắng lại có overshoot; đầu quay trước thân (nhìn về camera trước), liếc qua vai rồi vào nhịp.
+- Hạ thấp lúc bắt đầu quay (body_y -1,2), hai chân bước xoay MẠNH (x ±46°/32° ngược pha, dạng ngang thêm 12°), hai tay dang ra giữ thăng bằng rồi thu vào trước ngực để vào tư thế cúi.
+- Chưa build/chạy thử được trong môi trường này.

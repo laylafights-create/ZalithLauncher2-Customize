@@ -374,8 +374,12 @@ impl Skeleton {
         // 追踪中  世界空间解算指向输入点的朝向，受颈部活动范围截断，以 τ_gaze 平滑追随；
         //        背对摄像机或头-身水平扭角超限时放弃跟随，头部回正到身体朝向。
         // 未追踪  与身体朝向对齐（仅动画摆动），以 τ_recenter 平滑回正。
-        let parent = Quat::from_rotation_y(self.model_yaw + front_yaw());
-        let (head_target, tau) = match self.gaze_target.filter(|_| self.head_follow()) {
+        // Đang chạy clip (khoe cape / cúi chào): đầu chỉ theo clip, KHÔNG bám con trỏ — nếu không đầu bị kéo
+        // về phía camera trong lúc thân gập nên trông như ngửa ra sau. Parent gồm cả body_rot để gaze (lúc
+        // thân đã đứng thẳng lại) tính đúng đối với đầu gắn dưới thân.
+        let clip_active = !self.tracks.is_empty();
+        let parent = Quat::from_rotation_y(self.model_yaw + front_yaw()) * flip_quat(self.body_rot);
+        let (head_target, tau) = match self.gaze_target.filter(|_| self.head_follow() && !clip_active) {
             Some(_) => {
                 let raw = self.solve_gaze(view);
                 // 背对切断（迟滞）：model_yaw 即相对相机正面的偏航。
@@ -413,7 +417,8 @@ impl Skeleton {
                 self.gaze = Vec2::ZERO;
                 self.gaze_yaw_cut = false;
                 self.gaze_twist_cut = false;
-                (self.head_rot, self.tau_recenter)
+                // Clip chạy: đầu bám clip nhanh (không trễ 0,35s so với thân đang gập)
+                (self.head_rot, if clip_active { self.tau_gaze } else { self.tau_recenter })
             }
         };
         self.head = self
