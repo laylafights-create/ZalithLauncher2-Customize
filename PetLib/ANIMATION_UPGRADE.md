@@ -108,3 +108,16 @@ Chạy `cargo test` trong `PetLib/rust` để xác nhận.
 - `PetController.kt` bám theo mốc mới: `TURN_START` 4,39s / `TURN_SECONDS` 1,12s, `SHOW_OFF_ACTIVE_MILLIS` 11500, camera đẩy nhẹ 2,0 – 4,7s, đẩy vào lúc cúi 5,5 – 9,4s, dừng 9,8s, lưới an toàn recenter 6,5s. Spin 360° (0,78s) và camera nảy (1,55s) giữ nguyên.
 - Rust lấy thời lượng từ dữ liệu clip nên không phải sửa.
 - Chưa build/chạy thử được trong môi trường này.
+
+## v16: sửa cúi chào vẫn ngả NGƯỢC ra sau (hoàn nguyên đảo dấu của v14)
+- Bằng chứng: video chạy thật bản v15 cho thấy lúc cúi vẫn thấy ngực/khăn quàng, cằm hướng lên, đầu ở cao hơn hông trên màn hình (thân ngả ra sau). Phép tính "hướng đỉnh thân z = +1" của v14 dựa trên giả định quy ước `flip_quat` mà thực tế render không theo, nên đảo dấu x ở v14 làm cúi chào bị ngược.
+- Quy ước đúng (đã khớp với đoạn trước 3,3s đã được duyệt): thân/đầu **x DƯƠNG = cúi ra trước**, x âm = ngửa ra sau; tay/chân x ÂM = vung ra trước, x dương = ra sau.
+- `gen_fun_clips.py`: đảo lại dấu x của toàn bộ đoạn cúi (từ 3,6s) cho thân (cúi +88°, hít vào -6°), đầu (+16..21° lúc giữ cúi), tay phải (về lại -78° áp ngực, bỏ cộng dồn -360), tay trái (-62° buông xuống), chân phải lùi +24°, chân trái đỡ -8°. Ghi chú quy ước ở đầu file đã sửa. `clip_fun.rs` đã sinh lại.
+- Kiểm tra bằng tính toán theo quy ước thực: lúc giữ cúi đỉnh thân hướng +Z (về phía camera), mặt đầu hướng xuống, hai tay buông thẳng xuống. Các đoạn trước 3,6s và Kotlin/pose.rs không đổi.
+- Chưa build Android/`cargo test` được trong môi trường này; cần build lại thư viện Rust (clip nằm trong .so) rồi chạy thử.
+
+## v17: nâng cấp nhịp cúi chào
+- Giữ cúi: thân đảo trọng lượng nhẹ trái/phải (body y -3 -> +3 -> -1) nên không đơ.
+- Đầu nghiêng nhẹ (z -3..+3°) khi giữ cúi, rồi nghiêng 4° lúc đứng dậy.
+- Kết: ngẩng đầu lên (-5°) rồi gật chào nhẹ (+5°) trước khi về tư thế nghỉ.
+- Chưa build/chạy thử được trong môi trường này; cần build lại thư viện Rust.
