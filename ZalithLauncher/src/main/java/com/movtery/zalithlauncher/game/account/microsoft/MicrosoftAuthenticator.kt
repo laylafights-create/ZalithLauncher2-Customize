@@ -451,20 +451,46 @@ private suspend fun authenticateMinecraft(
     update(AsyncStatus.AUTHENTICATE_MINECRAFT)
 
     return withRetry {
-        runCatching {
+        try {
             httpPostJson<MinecraftAuthResponse>(
                 url = "$MINECRAFT_SERVICES_URL/authentication/login_with_xbox",
                 body = mapOf("identityToken" to "XBL3.0 x=${xstsResult.uhs};${xstsResult.token}"),
                 context = context
             )
-        }.onFailure { e ->
-            if (e is ResponseException) {
-                when (e.response.status.value) {
-                    429 -> throw MinecraftProfileException(FREQUENT)
-                    403 -> throw MinecraftProfileException(BLOCKED_IP)
-                }
+        } catch (e: ResponseException) {
+            // Keep the server diagnostic for troubleshooting. This is an error response body,
+            // not an OAuth/Xbox token; never log request headers or credentials.
+            val status = e.response.status.value
+            val body = runCatching { e.response.safeBodyAsText() }
+                .getOrNull()
+                .orEmpty()
+                .take(500)
+            Logger.error(
+                TAG,
+                "Minecraft Services login failed: HTTP $status, body = $body",
+                e
+            )
+
+            val normalizedBody = body.lowercase()
+            val isAppRegistrationError =
+                "invalid app registration" in normalizedBody ||
+                "appreginfo" in normalizedBody
+
+            when {
+                status == 429 -> throw MinecraftProfileException(FREQUENT)
+                status == 403 && isAppRegistrationError -> throw IllegalStateException(
+                    "Microsoft OAuth application registration was rejected by Minecraft Services " +
+                        "(HTTP 403). Check the launcher OAuth Client ID / app registration. " +
+                        "Changing the network or VPN will not fix an invalid app registration.",
+                    e
+                )
+                status == 403 -> throw MinecraftProfileException(BLOCKED_IP)
+                else -> throw Exception(
+                    "(minecraft_services_login) HTTP $status: $body",
+                    e
+                )
             }
-        }.getOrThrow()
+        }
     }
 }
 
