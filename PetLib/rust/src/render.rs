@@ -191,7 +191,12 @@ pub(crate) fn parts_into(pose: &Skeleton, scene: &SceneParams, v: &mut Vec<BoxPa
     for part in v.iter_mut() {
         part.transform = anchor * part.transform;
     }
-    let global = Mat4::from_rotation_y(pose.model_yaw() + pose::front_yaw());
+    // Phóng to quanh tâm khung (project() dịch gốc về y = 15 trước khi chiếu).
+    let zoom = pose.zoom.clamp(0.25, 4.);
+    let zoom_m = Mat4::from_translation(Vec3::Y * 15.)
+        * Mat4::from_scale(Vec3::splat(zoom))
+        * Mat4::from_translation(Vec3::Y * -15.);
+    let global = zoom_m * Mat4::from_rotation_y(pose.model_yaw() + pose::front_yaw());
     for part in v.iter_mut() {
         part.transform = global * part.transform;
     }

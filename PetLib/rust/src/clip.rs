@@ -1,6 +1,6 @@
 //! Modrinth 关键帧剪辑的采样与待机调度
 
-use glam::{Mat3, Quat, Vec2, Vec3};
+use glam::{Mat3, Quat, Vec2, Vec3, Vec4};
 
 use crate::clip_data::{Clip, Joint, CLIP_FPS};
 use crate::clip_fun::{ALL_SUBS, IDLE_LIVE};
@@ -83,6 +83,42 @@ pub(crate) fn sample(clip: &Clip, t: f32) -> ClipPose {
     pose
 }
 
+/// Catmull-Rom (uniform) giữa p1 và p2 tại t ∈ [0, 1]: vận tốc liên tục tại mọi key,
+/// khác với nội suy tuyến tính/slerp vốn gãy vận tốc ở mỗi khung 30fps (nguyên nhân gây cảm giác "cứng").
+fn catmull(p0: Vec4, p1: Vec4, p2: Vec4, p3: Vec4, t: f32) -> Vec4 {
+    let t2 = t * t;
+    let t3 = t2 * t;
+    (p1 * 2.
+        + (p2 - p0) * t
+        + (p0 * 2. - p1 * 5. + p2 * 4. - p3) * t2
+        + (p1 * 3. - p0 - p2 * 3. + p3) * t3)
+        * 0.5
+}
+
+/// Chỉ số khung lân cận: clip tuần hoàn (khoá đầu == khoá cuối) thì quấn vòng để không gãy ở mối nối.
+fn neighbours(len: usize, looped: bool, i0: usize) -> (usize, usize) {
+    let i1 = i0 + 1;
+    let prev = if i0 > 0 {
+        i0 - 1
+    } else if looped {
+        len.saturating_sub(2)
+    } else {
+        0
+    };
+    let next = if i1 + 1 < len {
+        i1 + 1
+    } else if looped {
+        usize::min(1, len - 1)
+    } else {
+        len - 1
+    };
+    (prev, next)
+}
+
+fn quat_vec(q: Quat) -> Vec4 {
+    Vec4::new(q.x, q.y, q.z, q.w)
+}
+
 fn sample_rotation(keys: &[[f32; 4]], t: f32) -> Quat {
     if keys.is_empty() {
         return Quat::IDENTITY;
@@ -96,7 +132,23 @@ fn sample_rotation(keys: &[[f32; 4]], t: f32) -> Quat {
     }
     let index = (frame as usize).min(last - 1);
     let frac = (frame - index as f32).clamp(0., 1.);
-    quat(&keys[index]).slerp(quat(&keys[index + 1]), frac)
+    let looped = quat(&keys[0]).dot(quat(&keys[last])).abs() > 0.999_999;
+    let (ip, in_) = neighbours(keys.len(), looped, index);
+    // Đưa các khoá lân cận về cùng bán cầu với q1 để spline không bị lật dấu (q và -q là một phép quay).
+    let align = |q: Quat, reference: Vec4| {
+        let v = quat_vec(q);
+        if v.dot(reference) < 0. {
+            -v
+        } else {
+            v
+        }
+    };
+    let q1 = quat_vec(quat(&keys[index]));
+    let q2 = align(quat(&keys[index + 1]), q1);
+    let q0 = align(quat(&keys[ip]), q1);
+    let q3 = align(quat(&keys[in_]), q2);
+    let v = catmull(q0, q1, q2, q3, frac);
+    Quat::from_xyzw(v.x, v.y, v.z, v.w).normalize()
 }
 
 fn sample_translation(keys: &[[f32; 3]], t: f32) -> Vec3 {
@@ -105,14 +157,22 @@ fn sample_translation(keys: &[[f32; 3]], t: f32) -> Vec3 {
     }
     let frame = (t * CLIP_FPS).max(0.);
     let last = keys.len() - 1;
+    let vec = |k: &[f32; 3]| Vec4::new(k[0], k[1], k[2], 0.);
     if last == 0 {
         return Vec3::new(keys[0][0], keys[0][1], keys[0][2]);
     }
     let index = (frame as usize).min(last - 1);
     let frac = (frame - index as f32).clamp(0., 1.);
-    let a = Vec3::new(keys[index][0], keys[index][1], keys[index][2]);
-    let b = Vec3::new(keys[index + 1][0], keys[index + 1][1], keys[index + 1][2]);
-    a.lerp(b, frac)
+    let looped = (vec(&keys[0]) - vec(&keys[last])).length() < 1e-4;
+    let (ip, in_) = neighbours(keys.len(), looped, index);
+    let v = catmull(
+        vec(&keys[ip]),
+        vec(&keys[index]),
+        vec(&keys[index + 1]),
+        vec(&keys[in_]),
+        frac,
+    );
+    Vec3::new(v.x, v.y, v.z)
 }
 
 /// 把披风四元数分解为渲染端欧拉 (x, z)：目标旋转 = rotation(x, π, z)，

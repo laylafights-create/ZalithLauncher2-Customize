@@ -51,6 +51,8 @@ final class PetLibNative {
 
     static native void nativeSetSquashDepth(long ptr, float depth);
 
+    static native void nativeSetZoom(long ptr, float zoom);
+
     static native void nativeSetGaze(long ptr, float x, float y, boolean hasTarget);
 
     static native void nativeSetYaw(long ptr, float yaw);

@@ -18,8 +18,8 @@ from pathlib import Path
 FPS = 30
 OUT = Path(__file__).resolve().parent.parent / "rust" / "src" / "clip_fun.rs"
 REST_Y = -0.64
-TAIL = 0.25
-LAG = {"head": 0.06, "armR": 0.045, "armL": 0.06, "cape": 0.16}
+TAIL = 0.5
+LAG = {"head": 0.03, "armR": 0.02, "armL": 0.03, "cape": 0.10}
 
 
 def smooth(t):
@@ -99,29 +99,101 @@ def cape_quat(sway_deg):
     return tuple(c / n for c in q)
 
 
+# Bộ lọc lò xo (second-order) cho từng khớp: biến chuyển động "đúng từng key" thành chuyển động có quán tính,
+# overshoot rồi lắng lại (follow-through). Đây là thứ làm animation bớt cứng/máy móc.
+# (omega rad/s, zeta): zeta thấp = nảy nhiều; omega cao = bám sát mục tiêu.
+SPRING = {
+    "body": (22.0, 0.80), "head": (15.0, 0.55), "armR": (18.0, 0.60), "armL": (18.0, 0.60),
+    "legR": (26.0, 0.85), "legL": (26.0, 0.85), "cape": (10.0, 0.40),
+}
+SUBSTEPS = 8  # bước tích phân mỗi khung 30fps (240Hz) để lò xo ổn định
+
+
+def micro(t, dur):
+    """Chuyển động vi mô luôn chạy trong emote (thở, trôi nhẹ) để các đoạn giữ tư thế không bị đơ."""
+    e = smooth(t / 0.35) * smooth((dur - t) / 0.45)
+    br = (1 - math.cos(2 * math.pi * 0.28 * t)) / 2
+    return dict(
+        body_y=0.10 * br * e,
+        body=(-0.8 * br * e, 1.1 * math.sin(2 * math.pi * 0.21 * t) * e, 0.9 * math.sin(2 * math.pi * 0.17 * t + 1) * e),
+        head=(0.8 * math.sin(2 * math.pi * 0.31 * t + .4) * e, 1.6 * math.sin(2 * math.pi * 0.23 * t) * e,
+              1.0 * math.sin(2 * math.pi * 0.19 * t + 2) * e),
+        armR=(1.2 * math.sin(2 * math.pi * 0.27 * t + .5) * e, 0, 0.9 * br * e),
+        armL=(1.2 * math.sin(2 * math.pi * 0.27 * t + 2.5) * e, 0, -0.9 * br * e),
+        cape=2.0 * math.sin(2 * math.pi * 0.4 * t + 1) * e)
+
+
+def add3(a, b):
+    return tuple(x + y for x, y in zip(a, b))
+
+
 def clip(dur, fn):
-    """fn(t) với t∈[0,dur] -> dict tư thế. Khớp trễ (LAG) lấy mẫu fn ở thời điểm sớm hơn."""
+    """fn(t) với t∈[0,dur] -> dict tư thế. Mỗi khớp đi qua bộ lọc lò xo (SPRING) + chuyển động vi mô;
+    khớp trễ (LAG) lấy mẫu fn ở thời điểm sớm hơn. Clip kéo dài thêm TAIL để lò xo lắng hẳn về nghỉ."""
     n = int(round((dur + TAIL) * FPS)) + 1
     ch = {k: [] for k in ("Body", "Head", "ArmRight", "ArmLeft", "LegRight", "LegLeft", "Cape")}
     tr = {k: [] for k in ("Body", "ArmRight", "ArmLeft", "LegRight", "LegLeft")}
-    z3 = (0, 0, 0)
+    z3 = (0.0, 0.0, 0.0)
+    joint_of = {"Body": "body", "Head": "head", "ArmRight": "armR", "ArmLeft": "armL",
+                "LegRight": "legR", "LegLeft": "legL"}
+    lag_of = {"head": "head", "armR": "armR", "armL": "armL", "cape": "cape"}
 
-    def at(t, lag=0.0):
-        return fn(max(0.0, min(dur, t - lag)))
+    def target(ts):
+        """Mục tiêu (chưa lọc) của mọi khớp tại thời điểm ts, dạng vector số thực."""
+        base = fn(max(0.0, min(dur + TAIL, ts)))
+        mic = micro(max(0.0, min(dur + TAIL, ts)), dur)
+        out = {}
+        for j in ("body", "head", "armR", "armL", "legR", "legL"):
+            src = base
+            if j in lag_of:
+                src = fn(max(0.0, min(dur + TAIL, ts - LAG[lag_of[j]])))
+            v = tuple(float(c) for c in src.get(j, z3))
+            m = mic.get(j)
+            if m is not None and j not in ("legR", "legL"):
+                v = add3(v, tuple(float(c) for c in m))
+            out[j] = v
+        src = fn(max(0.0, min(dur + TAIL, ts - LAG["cape"])))
+        out["cape"] = (float(src.get("cape", 0.0)) + mic["cape"],)
+        out["_lift"] = (float(base.get("lift", 0.0)),)
+        out["_body_y"] = (float(base.get("body_y", 0.0)) + mic["body_y"],)
+        return out
+
+    first = target(0.0)
+    x = {k: list(v) for k, v in first.items() if not k.startswith("_")}
+    vel = {k: [0.0] * len(v) for k, v in x.items()}
+    dt = 1.0 / (FPS * SUBSTEPS)
+    final = target(dur + TAIL)
 
     for i in range(n):
         t = i / FPS
-        p = at(t)
-        ph, pr, pl, pc = (at(t, LAG[k]) for k in ("head", "armR", "armL", "cape"))
-        ch["Body"].append(quat_euler(*p.get("body", z3)))
-        ch["Head"].append(quat_euler(*ph.get("head", z3)))
-        ch["ArmRight"].append(quat_euler(*pr.get("armR", z3)))
-        ch["ArmLeft"].append(quat_euler(*pl.get("armL", z3)))
-        ch["LegRight"].append(quat_euler(*p.get("legR", z3)))
-        ch["LegLeft"].append(quat_euler(*p.get("legL", z3)))
-        ch["Cape"].append(cape_quat(pc.get("cape", 0.0)))
-        lift = p.get("lift", 0.0)
-        tr["Body"].append((0.0, REST_Y + lift + p.get("body_y", 0.0), 0.0))
+        if i > 0:
+            for sub in range(SUBSTEPS):
+                ts = (i - 1) / FPS + (sub + 1) * dt
+                tg = target(ts)
+                for k in x:
+                    om, ze = SPRING[k]
+                    for a in range(len(x[k])):
+                        acc = om * om * (tg[k][a] - x[k][a]) - 2 * ze * om * vel[k][a]
+                        vel[k][a] += acc * dt
+                        x[k][a] += vel[k][a] * dt
+        cur = {k: list(v) for k, v in x.items()}
+        # Vài khung cuối kéo về đúng tư thế kết thúc để nối mượt với animation nền.
+        k_end = n - 1 - i
+        if k_end < 3:
+            w = (3 - k_end) / 3.0
+            for k in cur:
+                for a in range(len(cur[k])):
+                    cur[k][a] = cur[k][a] * (1 - w) + final[k][a] * w
+        tg = target(t)
+        ch["Body"].append(quat_euler(*cur["body"]))
+        ch["Head"].append(quat_euler(*cur["head"]))
+        ch["ArmRight"].append(quat_euler(*cur["armR"]))
+        ch["ArmLeft"].append(quat_euler(*cur["armL"]))
+        ch["LegRight"].append(quat_euler(*cur["legR"]))
+        ch["LegLeft"].append(quat_euler(*cur["legL"]))
+        ch["Cape"].append(cape_quat(cur["cape"][0]))
+        lift = tg["_lift"][0]
+        tr["Body"].append((0.0, REST_Y + lift + tg["_body_y"][0], 0.0))
         tr["ArmRight"].append((5.0, 10.0, 0.0))
         tr["ArmLeft"].append((-5.0, 10.0, 0.0))
         tr["LegRight"].append((1.9, max(0.0, lift), 0.0))
@@ -328,9 +400,10 @@ def think(t):
 
 
 # ============ idle sống động (lặp 8 giây) ============
-# Lớp 1: thở (4s/nhịp, hít nhanh - thở ra chậm), ngực nâng, vai nhích lên, tay trễ theo thân.
-# Lớp 2: chuyển trọng tâm (8s/chu kỳ): hông lệch, thân nghiêng ngược, chân chống/chân thả lỏng.
-# Lớp 3: liếc nhìn xung quanh hai lần (không lặp đều đặn) + thở dài một lần ở nửa sau.
+# Phiên bản trước biên độ chỉ 1-2 độ nên ở khoảng cách nhìn thật gần như đứng im giữa hai emote.
+# Giờ mỗi lớp đủ lớn để nhìn thấy, và cứ ~1.5 giây lại có một "sự kiện nhỏ" để không bao giờ chết cứng:
+#   thở (4s/nhịp, ngực nâng, vai nhích)   ·  chuyển trọng tâm (hông lệch, thân nghiêng ngược, chân thả lỏng)
+#   liếc phải · chỉnh tay phải · liếc xuống-trái · chỉnh tay trái · nghiêng đầu tò mò · thở dài
 # Chỉ dùng hài nguyên và window() (bằng 0 ở hai đầu) để lặp liền mạch; không dùng T().
 
 def idle_live(t):
@@ -338,27 +411,32 @@ def idle_live(t):
     t = t % P
     w = 2 * math.pi / P
     ws = math.sin(w * t)                      # trọng tâm: -1 chân trái, +1 chân phải
-    wc = math.cos(w * t)
     x = 2 * w * t                              # nhịp thở 4s
-    br = (1 - math.cos(x)) / 2                 # 0..1
-    br = br ** 1.25                            # hít vào nhanh hơn thở ra
+    br = ((1 - math.cos(x)) / 2) ** 1.25       # hít vào nhanh hơn thở ra
     sigh = window(t, 5.0, 7.2, .7)             # một lần thở dài sâu hơn
-    br_d = br * (1 + 0.55 * sigh)
-    glance1 = window(t, 1.6, 3.1, .5)          # liếc sang phải
-    glance2 = window(t, 4.9, 6.3, .55)         # liếc xuống/trái
+    br_d = br * (1 + 0.6 * sigh)
+    glance1 = window(t, 1.0, 2.7, .45)         # liếc sang phải
+    fidgetR = window(t, 2.9, 4.0, .35)         # chỉnh tay phải (nhấc nhẹ ra trước)
+    tilt = window(t, 3.9, 5.1, .4)             # nghiêng đầu tò mò
+    glance2 = window(t, 5.2, 6.6, .45)         # liếc xuống/trái
+    fidgetL = window(t, 6.5, 7.5, .3)          # chỉnh tay trái
     s1 = lambda a, f=1, ph=0.0: a * math.sin(f * w * t + ph)
     return dict(
-        body_y=0.14 * br_d - 0.03,
-        body_x=0.28 * ws,
-        body=(-1.2 * br_d + 0.6, s1(1.8, 1, .4) + s1(.6, 2, 1.0), -1.7 * ws + s1(.5, 2, .9)),
-        head=(-1.1 * br_d + 1.0 + 4.5 * glance2 - 2.0 * glance1,
-              11 * glance1 - 9 * glance2 + s1(2.0, 1, 1.2) + 0.8 * ws,
-              1.6 * ws + 3.5 * glance1 - 2.5 * glance2 + s1(.8, 2, .5)),
-        armR=(s1(4.2, 2, .6) + s1(1.2, 4, 2.0) + 1.0 * br_d, s1(1.2, 1, 1.0), 4 + 1.3 * br_d + 0.9 * ws),
-        armL=(s1(4.2, 2, .6 + math.pi) + s1(1.2, 4, 3.2) + 1.0 * br_d, s1(-1.2, 1, 1.0), -4 - 1.3 * br_d + 0.9 * ws),
-        legR=(0.6 + s1(1.2, 1, .8), 0, 1.4 + 1.4 * max(0.0, ws)),
-        legL=(0.6 + s1(1.2, 1, .8 + math.pi), 0, -1.4 - 1.4 * max(0.0, -ws)),
-        cape=s1(5.0, 2, 1.0) + s1(2.5, 4, .5) + 2.0 * br_d + 1.5 * ws)
+        body_y=0.32 * br_d - 0.05 - 0.12 * glance1,
+        body_x=0.6 * ws,
+        body=(-2.6 * br_d + 1.2 + 3.0 * glance2,
+              s1(3.8, 1, .4) + s1(1.2, 2, 1.0) + 5.0 * glance1 - 4.0 * glance2,
+              -3.8 * ws + s1(.9, 2, .9) - 2.0 * tilt),
+        head=(-2.2 * br_d + 1.0 + 7.0 * glance2 - 3.0 * glance1 - 4.0 * tilt,
+              18 * glance1 - 15 * glance2 + 4 * tilt + s1(3.0, 1, 1.2) + 1.5 * ws,
+              3.0 * ws + 5 * glance1 - 4 * glance2 + 8.5 * tilt + s1(1.4, 2, .5)),
+        armR=(s1(6.5, 2, .6) + s1(1.8, 4, 2.0) + 2.0 * br_d - 16 * fidgetR, s1(2.0, 1, 1.0) + 6 * fidgetR,
+              4 + 3.0 * br_d + 1.8 * ws + 5 * fidgetR),
+        armL=(s1(6.5, 2, .6 + math.pi) + s1(1.8, 4, 3.2) + 2.0 * br_d - 13 * fidgetL, s1(-2.0, 1, 1.0) - 5 * fidgetL,
+              -4 - 3.0 * br_d + 1.8 * ws - 4 * fidgetL),
+        legR=(1.0 + s1(2.6, 1, .8) - 2.0 * max(0.0, -ws), 0, 2.2 + 2.6 * max(0.0, ws)),
+        legL=(1.0 + s1(2.6, 1, .8 + math.pi) - 2.0 * max(0.0, ws), 0, -2.2 - 2.6 * max(0.0, -ws)),
+        cape=s1(7.5, 2, 1.0) + s1(3.5, 4, .5) + 3.0 * br_d + 3.0 * ws + 4 * glance1)
 
 
 # ============ clip khoe cape: giơ một tay lên trời ============

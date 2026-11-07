@@ -318,6 +318,21 @@ pub extern "system" fn Java_com_movtery_petlib_PetLibNative_nativeSetHeadRange(
 }
 
 #[no_mangle]
+pub extern "system" fn Java_com_movtery_petlib_PetLibNative_nativeSetZoom(
+    _env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+    zoom: jfloat,
+) {
+    guard(|| {
+        // SAFETY: 句柄由宿主渲染线程独占使用。
+        if let Some(model) = unsafe { model_from(ptr) } {
+            model.set_zoom(zoom);
+        }
+    })
+}
+
+#[no_mangle]
 pub extern "system" fn Java_com_movtery_petlib_PetLibNative_nativeSetSquashDepth(
     _env: JNIEnv,
     _class: JClass,

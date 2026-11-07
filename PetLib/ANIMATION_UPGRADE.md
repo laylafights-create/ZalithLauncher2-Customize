@@ -23,3 +23,26 @@ Chạy `cargo test` trong PetLib/rust để xác nhận.
 ## Hiệu ứng khoe cape (CAPE_POSE)
 Viết lại thành kịch bản "anh hùng ra mắt" 3.65s: dồn lực -> bật người, tay phải vút lên trời (overshoot) -> tiếp đất nhún mạnh
 -> tạo dáng chân dạng rộng, tay trái chống hông, cape phần phật -> hạ tay chậm. Thời lượng giữ nguyên nên code gọi không đổi.
+
+## Idle v2 (sửa lỗi "cứng ngắc" khi đứng chờ)
+Từ video: khoảng 5/7 giây giữa hai emote nhân vật gần như đứng im (biên độ idle cũ chỉ 1-2 độ).
+Idle mới biên độ lớn hơn nhiều (đầu xoay ~40°, thân xoay ~17°, tay ~25°) và có sự kiện nhỏ gần như mỗi 1-1.5s:
+liếc phải, chỉnh tay phải, nghiêng đầu tò mò, liếc xuống-trái, chỉnh tay trái, thở dài. Vẫn lặp 8s liền mạch.
+
+## Màn hình Skin: đứng yên + phóng to
+- `PetController.setStill(true)`: nhân vật giữ tư thế nghỉ, không idle/emote/chạm/vuốt/đánh. Hành động khoe cape khi `setCape(...)` vẫn chạy rồi về tư thế nghỉ.
+  `setStill(false)` phát lại idle (dùng khi rời màn hình Skin).
+- `PetController.setZoom(1.5f)`: phóng to quanh tâm khung (0.25..4, 1 = mặc định). Rust: `PetModel::set_zoom`, JNI `nativeSetZoom`.
+- Ví dụ ở màn hình Skin:
+    controller.setStill(true)
+    controller.setZoom(1.5f)
+    controller.setCape(capeBytes)   // vẫn khoe cape như cũ
+
+## Làm mềm toàn bộ emote/hành động (bớt cứng)
+1. **Nội suy Catmull-Rom** (rust/src/clip.rs) thay cho slerp/lerp tuyến tính giữa các key 30fps: vận tốc liên tục tại mọi key.
+   Áp dụng cho MỌI clip, kể cả 3 fidget gốc và clip phản ứng khi chạm. Clip tuần hoàn quấn vòng để không gãy ở mối nối.
+2. **Bộ lọc lò xo từng khớp** (tools/gen_fun_clips.py, `SPRING`): quán tính + overshoot + lắng lại (follow-through);
+   đầu/tay/cape "nảy" hơn, thân/chân chắc hơn. LAG giảm vì lò xo đã tạo độ trễ.
+3. **Chuyển động vi mô** trong mọi emote (thở, đầu trôi nhẹ, cape lay) -> đoạn giữ tư thế không còn đơ.
+4. TAIL 0.25s -> 0.5s để lò xo lắng hẳn trước khi nối sang idle (emote dài hơn ~0.25s).
+5. Sửa các test phụ thuộc thời lượng cố định (theo thời lượng emote thực tế).

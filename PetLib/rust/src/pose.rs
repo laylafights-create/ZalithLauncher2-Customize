@@ -237,6 +237,8 @@ pub struct Skeleton {
     pub head_range: Vec2,
     /// 压扁深度百分比（0..=30）。
     pub squash_depth: f32,
+    /// Hệ số phóng to nhân vật quanh tâm khung hình (1 = mặc định).
+    pub zoom: f32,
 
     gaze_target: Option<Vec2>,
     yaw_target: f32,
@@ -294,6 +296,7 @@ impl Skeleton {
             tau_recenter: TAU_RECENTER,
             head_range: Vec2::new(60f32.to_radians(), 53f32.to_radians()),
             squash_depth: 5.,
+            zoom: 1.,
             gaze_target: None,
             yaw_target: 0.,
             animation: Some((AnimationId::Idle, 1., true)),
@@ -1241,9 +1244,11 @@ mod tests {
         }
         let fired_at = fired_at.expect("sub must fire within 10s");
         assert!((fired_at as f32 * dt - clip::SUB_INTERVAL).abs() < 0.1);
-        // 子动画 3 秒后淡回基础循环
+        // Thời lượng phụ thuộc emote được chọn (các clip dài tới ~4s): chờ đúng theo clip đó.
+        let index = active_sub(&s).expect("active sub");
+        let duration = clip::clip_duration(&ALL_SUBS[index]);
         let mut returned = false;
-        for _ in 0..220 {
+        for _ in 0..((duration * 60.) as usize + 30) {
             s.update(view, now, dt);
             now += dt;
             if !sub_active(&s) {
@@ -1251,9 +1256,9 @@ mod tests {
                 break;
             }
         }
-        assert!(returned, "sub must return to base after ~3s");
-        // 回归后一个完整间隔内不再触发
-        for _ in 0..470 {
+        assert!(returned, "sub must return to base after its own duration ({duration}s)");
+        // Sau emote, bộ đếm nghỉ ngắn REPEAT_INTERVAL: trong khoảng đó không được kích hoạt lại.
+        for _ in 0..((clip::REPEAT_INTERVAL - 0.6) * 60.) as usize {
             s.update(view, now, dt);
             now += dt;
             assert!(!sub_active(&s));
@@ -1274,8 +1279,10 @@ mod tests {
             now += dt;
         }
         assert!(sub_active(&s), "sub must have fired");
-        // 播完子动画(3 秒)并等淡出结束
-        for _ in 0..(3 * 60 + 30) {
+        // Phát hết emote được chọn (thời lượng theo clip) rồi đợi fade-out kết thúc
+        let index = active_sub(&s).expect("active sub");
+        let frames = (clip::clip_duration(&ALL_SUBS[index]) * 60.) as usize + 30;
+        for _ in 0..frames {
             s.update(view, now, dt);
             now += dt;
         }
@@ -1386,7 +1393,8 @@ mod tests {
             prev_active = active;
         }
         assert!(sub_fires > 100, "subs must keep firing: {sub_fires}");
-        assert!(phase_wraps > 300, "idle must keep looping: {phase_wraps}");
+        // Idle lặp 8s và chỉ chạy lúc không có emote (~55% thời gian): 20 phút ≈ 85 vòng.
+        assert!(phase_wraps > 40, "idle must keep looping: {phase_wraps}");
     }
 
     /// 腿挂静态髋部:躯干位移(含 idle 的 -0.64px 下沉)不得出现在脚上。

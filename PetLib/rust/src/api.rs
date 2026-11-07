@@ -102,6 +102,11 @@ impl PetModel {
     }
 
     /// 压扁深度百分比（0..=30，默认 5）。
+    /// Phóng to nhân vật quanh tâm khung hình (0.25..=4, 1 = mặc định).
+    pub fn set_zoom(&mut self, zoom: f32) {
+        self.skeleton.zoom = if zoom.is_finite() { zoom.clamp(0.25, 4.) } else { 1. };
+    }
+
     pub fn set_squash_depth(&mut self, percent: f32) {
         self.skeleton.squash_depth = percent.clamp(0., 30.);
     }
@@ -296,6 +301,28 @@ mod tests {
         let alpha = a.iter().skip(3).step_by(4).filter(|&&v| v > 0).count();
         assert!(alpha > 1000, "first frame is nearly empty");
         assert_eq!(a, b, "identical frame streams must be byte-identical");
+    }
+
+    /// Zoom 1.5 làm nhân vật chiếm nhiều pixel hơn rõ rệt; zoom không hợp lệ rơi về 1.
+    #[test]
+    fn zoom_enlarges_model() {
+        let (w, h) = (300usize, 400usize);
+        let coverage = |zoom: f32| {
+            let mut model = test_model();
+            model.stop_animation();
+            model.set_zoom(zoom);
+            let mut buf = vec![0u8; w * h * 4];
+            for i in 0..30 {
+                model
+                    .render(w, h, i as f32 / 60., 1. / 60., &mut buf)
+                    .unwrap();
+            }
+            buf.iter().skip(3).step_by(4).filter(|&&v| v > 0).count()
+        };
+        let base = coverage(1.);
+        let zoomed = coverage(1.5);
+        assert!(zoomed as f32 > base as f32 * 1.6, "base {base}, zoomed {zoomed}");
+        assert_eq!(coverage(f32::NAN), base, "NaN zoom must fall back to 1");
     }
 
     #[test]

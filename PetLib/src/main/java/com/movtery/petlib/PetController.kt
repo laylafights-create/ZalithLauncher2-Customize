@@ -232,6 +232,35 @@ class PetController(
     }
 
     /**
+     * Phóng to nhân vật quanh tâm khung hình.
+     * @param zoom 1 = mặc định; ví dụ 1.5 để to hơn 50% (giới hạn 0.25..4)
+     */
+    fun setZoom(@FloatRange(0.25, 4.0) zoom: Float) {
+        post { PetLibNative.nativeSetZoom(ptr, zoom) }
+    }
+
+    @Volatile
+    private var still = false
+
+    /**
+     * Chế độ đứng yên (dùng cho màn hình Skin): nhân vật giữ tư thế nghỉ, không idle, không emote,
+     * không phản ứng chạm/vuốt/đánh. Chỉ riêng hành động khoe cape khi [setCape] (showOff = true) vẫn chạy.
+     * Tắt chế độ này sẽ phát lại idle.
+     */
+    fun setStill(enabled: Boolean) {
+        still = enabled
+        post {
+            handler.removeCallbacks(recenterAfterShowOff)
+            if (enabled) {
+                PetLibNative.nativeCancelEmote(ptr)
+                PetLibNative.nativeStopAnimation(ptr)
+            } else {
+                PetLibNative.nativePlayAnimation(ptr, PetAnimation.Idle.id, 1f, true)
+            }
+        }
+    }
+
+    /**
      * 注视目标（视图像素坐标），null 表示回正。
      */
     fun setGaze(target: Pair<Float, Float>?) {
@@ -282,6 +311,7 @@ class PetController(
      * @param headFollow 播放期间头部是否追随注视输入
      */
     fun playAnimation(animation: PetAnimation, speed: Float = 1f, headFollow: Boolean = true) {
+        if (still) return
         post { PetLibNative.nativePlayAnimation(ptr, animation.id, speed, headFollow) }
     }
 
@@ -295,6 +325,7 @@ class PetController(
      * @param now 兼容保留；内部按帧间隔计时，不读取该值
      */
     fun squashTap(now: Float) {
+        if (still) return
         post { PetLibNative.nativeSquashTap(ptr, now) }
     }
 
@@ -303,11 +334,13 @@ class PetController(
      * @param now 兼容保留；内部按帧间隔计时，不读取该值
      */
     fun playSwing(now: Float) {
+        if (still) return
         post { PetLibNative.nativePlaySwing(ptr, now) }
     }
 
     /** Phát một emote; đang phát emote khác thì chuyển mượt sang emote mới. */
     fun playEmote(emote: PetEmote) {
+        if (still) return
         post { PetLibNative.nativePlayEmote(ptr, emote.id) }
     }
 
@@ -320,6 +353,7 @@ class PetController(
      * 播放点击反应动画，播放中重复调用时无效果
      */
     fun playInteract() {
+        if (still) return
         post { PetLibNative.nativePlayInteract(ptr) }
     }
 
