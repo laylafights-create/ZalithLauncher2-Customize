@@ -32,3 +32,10 @@ LWJGL/*/build/
 
 .vscode/
 
+
+local.properties
+*.jks
+*.keystore
+/build/
+/app/build/
+.gradle/

@@ -66,6 +66,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.movtery.zalithlauncher.setting.AllSettings
+import com.movtery.zalithlauncher.ui.theme.McColors
 import com.movtery.zalithlauncher.ui.screens.content.elements.backgroundGlass
 import com.movtery.zalithlauncher.ui.theme.cardColor
 import com.movtery.zalithlauncher.ui.theme.onCardColor
@@ -146,9 +147,9 @@ fun SmallOutlinedEditField(
     placeholder: @Composable (() -> Unit)? = null,
     leadingIcon: @Composable (() -> Unit)? = null,
     trailingIcon: @Composable (() -> Unit)? = null,
-    colors: TextFieldColors = OutlinedTextFieldDefaults.colors(),
+    colors: TextFieldColors = mcTextFieldColors(),
     contentColor: Color? = null,
-    shape: Shape = OutlinedTextFieldDefaults.shape,
+    shape: Shape = RoundedCornerShape(2.dp),
     textStyle: TextStyle = TextStyle(fontSize = 12.sp),
     cursorBrush: Brush = SolidColor(LocalTextSelectionColors.current.handleColor),
     keyboardOptions: KeyboardOptions? = null,
@@ -283,8 +284,8 @@ fun OwnOutlinedTextField(
     maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE,
     minLines: Int = 1,
     interactionSource: MutableInteractionSource? = null,
-    shape: Shape = OutlinedTextFieldDefaults.shape,
-    colors: TextFieldColors = OutlinedTextFieldDefaults.colors(),
+    shape: Shape = RoundedCornerShape(2.dp),
+    colors: TextFieldColors = mcTextFieldColors(),
     imePanEnabled: Boolean = true,
 ) {
     val focusManager = LocalFocusManager.current
@@ -390,3 +391,19 @@ fun IntInputField(
         shape = MaterialTheme.shapes.large
     )
 }
+
+/** Màu ô nhập kiểu Minecraft: nền tối, viền đá, viền xanh lá khi focus. */
+@Composable
+fun mcTextFieldColors(): TextFieldColors = OutlinedTextFieldDefaults.colors(
+    focusedContainerColor = McColors.Background,
+    unfocusedContainerColor = McColors.Background,
+    disabledContainerColor = McColors.Background,
+    errorContainerColor = McColors.Background,
+    focusedBorderColor = McColors.PlayGreenLight,
+    unfocusedBorderColor = McColors.StoneLight,
+    disabledBorderColor = McColors.StoneDark,
+    errorBorderColor = McColors.Error,
+    focusedLabelColor = McColors.PlayGreenLight,
+    unfocusedLabelColor = McColors.TextSecondary,
+    cursorColor = McColors.PlayGreenLight,
+)

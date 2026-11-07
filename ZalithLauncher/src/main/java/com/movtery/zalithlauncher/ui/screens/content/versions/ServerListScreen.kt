@@ -789,7 +789,7 @@ private fun ServerItem(
             //服务器的图标
             ServerIcon(
                 modifier = Modifier
-                    .clip(shape = RoundedCornerShape(10.dp)),
+                    .clip(shape = RoundedCornerShape(2.dp)),
                 server = item,
                 size = 64.dp,
             )

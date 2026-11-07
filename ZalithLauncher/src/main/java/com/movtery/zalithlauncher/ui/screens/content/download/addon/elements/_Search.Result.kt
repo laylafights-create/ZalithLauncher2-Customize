@@ -472,7 +472,7 @@ fun ResultProjectLayout(
         ) {
             AddonIcon(
                 modifier = Modifier
-                    .clip(shape = RoundedCornerShape(10.dp))
+                    .clip(shape = RoundedCornerShape(2.dp))
                     .align(Alignment.CenterVertically),
                 size = 72.dp,
                 iconUrl = iconUrl

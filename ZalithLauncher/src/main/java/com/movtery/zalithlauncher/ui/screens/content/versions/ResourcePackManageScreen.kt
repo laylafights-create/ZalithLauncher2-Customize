@@ -701,7 +701,7 @@ private fun ResourcePackItemLayout(
             ByteArrayIcon(
                 modifier = Modifier
                     .size(48.dp)
-                    .clip(shape = RoundedCornerShape(10.dp)),
+                    .clip(shape = RoundedCornerShape(2.dp)),
                 triggerRefresh = resourcePackInfo,
                 icon = resourcePackInfo.icon
             )

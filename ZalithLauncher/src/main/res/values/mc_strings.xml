@@ -20,4 +20,6 @@
     <string name="mc_picker_load_failed">Could not load the version list. Check your connection.</string>
     <string name="mc_picker_state_installed">Installed</string>
     <string name="mc_picker_state_download">Download</string>
+    <string name="mc_ui_scale_title">UI size</string>
+    <string name="mc_ui_scale_summary">Scale the whole launcher interface. Applied when you release the slider.</string>
 </resources>

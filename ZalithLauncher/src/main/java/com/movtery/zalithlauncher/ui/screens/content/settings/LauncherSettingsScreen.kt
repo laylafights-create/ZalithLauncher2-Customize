@@ -53,6 +53,8 @@ import androidx.compose.material3.nonInteractiveScrollbar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.foundation.layout.Spacer
+import com.movtery.zalithlauncher.ui.theme.McUiScale
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -150,6 +152,30 @@ fun LauncherSettingsScreen(
                 .padding(all = 12.dp),
             isVisible = isVisible
         ) {
+            AnimatedItem { ctx ->
+                // Thanh tùy chỉnh kích thước giao diện: chỉ áp dụng khi thả tay để slider không bị giật
+                val pendingPercent = remember { mutableStateOf(McUiScale.percent()) }
+                SettingsCardColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .animated(ctx)
+                ) {
+                    IntSliderSettingsCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        position = CardPosition.Single,
+                        value = pendingPercent.value,
+                        title = stringResource(R.string.mc_ui_scale_title),
+                        summary = stringResource(R.string.mc_ui_scale_summary),
+                        valueRange = McUiScale.MIN_PERCENT.toFloat()..McUiScale.MAX_PERCENT.toFloat(),
+                        suffix = "%",
+                        fineTuningControl = true,
+                        onValueChange = { pendingPercent.value = it },
+                        onValueChangeFinished = { McUiScale.save(context, pendingPercent.value) }
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+
             AnimatedItem { ctx ->
                 SettingsCardColumn(
                     modifier = Modifier

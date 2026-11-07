@@ -20,4 +20,6 @@
     <string name="mc_picker_load_failed">Không tải được danh sách phiên bản. Kiểm tra kết nối mạng.</string>
     <string name="mc_picker_state_installed">Đã cài</string>
     <string name="mc_picker_state_download">Tải về</string>
+    <string name="mc_ui_scale_title">Kích thước giao diện</string>
+    <string name="mc_ui_scale_summary">Thu nhỏ hoặc phóng to toàn bộ giao diện launcher. Áp dụng khi bạn thả thanh trượt.</string>
 </resources>

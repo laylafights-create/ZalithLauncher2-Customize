@@ -27,6 +27,10 @@ import com.movtery.zalithlauncher.game.account.getAccountTypeName
 import com.movtery.zalithlauncher.ui.screens.content.elements.PlayerFace
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -191,9 +195,23 @@ fun MainScreen(
         contentColor = McColors.TextPrimary
     ) {
         Row(modifier = Modifier.fillMaxSize()) {
+            // Vào Tin tức / Tải xuống / Chơi chung / Cài đặt thì thanh bên thu gọn để nhường chỗ cho nội dung;
+            // bấm nút mũi tên quay lại ở thanh trên để mở lại.
+            val sidebarCollapsed = inNews || inDownload || inMultiplayer || inSettings
+            val sidebarWidth by animateDpAsState(
+                targetValue = if (sidebarCollapsed) 0.dp else 190.dp,
+                animationSpec = tween(200),
+                label = "SidebarWidth"
+            )
+            Box(
+                modifier = Modifier
+                    .width(sidebarWidth)
+                    .fillMaxHeight()
+                    .clipToBounds()
+            ) {
             MinecraftSidebar(
                 modifier = Modifier
-                    .width(190.dp)
+                    .requiredWidth(190.dp)
                     .fillMaxHeight(),
                 inJavaEdition = inJavaSection,
                 inNews = inNews,
@@ -215,8 +233,9 @@ fun MainScreen(
                 toJavaEdition = { if (!inLauncherScreen) toMainScreen() },
                 toSettingsScreen = { navigateTop(screenBackStackModel.settingsScreen) }
             )
+            }
 
-            McVerticalDivider()
+            if (sidebarWidth > 0.dp) McVerticalDivider()
 
             Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
                 if (inJavaSection) {

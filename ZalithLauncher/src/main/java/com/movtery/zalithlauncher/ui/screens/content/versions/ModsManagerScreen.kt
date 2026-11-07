@@ -1206,7 +1206,7 @@ private fun ModItemLayout(
         ) {
             //模组的封面图标
             ModIcon(
-                modifier = Modifier.clip(shape = RoundedCornerShape(10.dp)),
+                modifier = Modifier.clip(shape = RoundedCornerShape(2.dp)),
                 mod = mod,
                 iconSize = 48.dp
             )

@@ -19,6 +19,7 @@
 package com.movtery.zalithlauncher.game.download.addon.platform
 
 import android.util.Log
+import com.movtery.zalithlauncher.BuildKeys
 import com.movtery.zalithlauncher.game.addons.mirror.MirrorPriority
 import com.movtery.zalithlauncher.game.addons.mirror.resolveMirrorPriority
 import com.movtery.zalithlauncher.game.download.addon.mapExceptionToMessage
@@ -107,32 +108,34 @@ suspend fun <E: AbstractPlatformSearcher, T> mirroredPlatformSearcher(
 }
 
 /**
- * 镜像源只能在中国地区使用
+ * CurseForge: API chính thức cần khóa API (x-api-key). Bản tự build thường không có khóa
+ * nên server trả về 403. Vì vậy mirror MCIM (không cần khóa) luôn được dùng làm nguồn dự phòng
+ * ở mọi khu vực; nếu không có khóa thì mirror được thử trước.
  */
 fun mirroredCurseForgeSource(
     enabledMirror: Boolean = isChinaMainland()
 ): List<CurseForgeSearcher> {
     val source = resolveMirrorPriority(AllSettings.addonPlatformSource.getValue(), mainland = enabledMirror)
-    val mirrorSource = mirrorCurseForgeSearcher.takeIf { enabledMirror }
-    return when (source) {
-        MirrorPriority.OFFICIAL -> listOf(curseForgeSearcher)
-        MirrorPriority.MIRROR_FIRST ->
-            listOfNotNull(mirrorSource, curseForgeSearcher)
+    val noApiKey = BuildKeys.CURSEFORGE_API.isBlank()
+    return when {
+        noApiKey || source == MirrorPriority.MIRROR_FIRST ->
+            listOf(mirrorCurseForgeSearcher, curseForgeSearcher)
+        else -> listOf(curseForgeSearcher, mirrorCurseForgeSearcher)
     }
 }
 
 /**
- * 镜像源只能在中国地区使用
+ * Modrinth: API chính thức không cần khóa, nhưng có thể bị chặn/chậm ở một số mạng.
+ * Mirror MCIM luôn được thêm làm nguồn dự phòng ở mọi khu vực (ưu tiên trước nếu ở Trung Quốc
+ * hoặc người dùng chọn mirror).
  */
 fun mirroredModrinthSource(
     enabledMirror: Boolean = isChinaMainland()
 ): List<ModrinthSearcher> {
     val source = resolveMirrorPriority(AllSettings.addonPlatformSource.getValue(), mainland = enabledMirror)
-    val mirrorSource = mirrorModrinthSearcher.takeIf { enabledMirror }
     return when (source) {
-        MirrorPriority.OFFICIAL -> listOf(modrinthSearcher)
-        MirrorPriority.MIRROR_FIRST ->
-            listOfNotNull(mirrorSource, modrinthSearcher)
+        MirrorPriority.MIRROR_FIRST -> listOf(mirrorModrinthSearcher, modrinthSearcher)
+        MirrorPriority.OFFICIAL -> listOf(modrinthSearcher, mirrorModrinthSearcher)
     }
 }
 

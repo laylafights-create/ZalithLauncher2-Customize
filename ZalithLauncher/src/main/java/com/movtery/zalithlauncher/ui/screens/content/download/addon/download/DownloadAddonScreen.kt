@@ -594,7 +594,7 @@ private fun ProjectInfo(
                             ) {
                                 ShimmerBox(
                                     modifier = Modifier
-                                        .clip(shape = RoundedCornerShape(10.dp))
+                                        .clip(shape = RoundedCornerShape(2.dp))
                                         .size(72.dp)
                                 )
                                 Column(
@@ -645,7 +645,7 @@ private fun ProjectInfo(
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 AddonIcon(
-                                    modifier = Modifier.clip(shape = RoundedCornerShape(10.dp)),
+                                    modifier = Modifier.clip(shape = RoundedCornerShape(2.dp)),
                                     size = 72.dp,
                                     iconUrl = iconUrl
                                 )

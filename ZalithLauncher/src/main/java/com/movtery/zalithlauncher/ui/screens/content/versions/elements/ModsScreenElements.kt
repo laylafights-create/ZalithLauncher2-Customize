@@ -390,7 +390,7 @@ private fun ModsUpdateEntryItem(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 AddonIcon(
-                    modifier = Modifier.clip(shape = RoundedCornerShape(12.dp)),
+                    modifier = Modifier.clip(shape = RoundedCornerShape(2.dp)),
                     size = 52.dp,
                     iconUrl = data.project.iconUrl
                 )

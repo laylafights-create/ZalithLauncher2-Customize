@@ -670,7 +670,7 @@ private fun SaveItemLayout(
             SaveIcon(
                 modifier = Modifier
                     .size(42.dp)
-                    .clip(shape = RoundedCornerShape(10.dp)),
+                    .clip(shape = RoundedCornerShape(2.dp)),
                 saveData = saveData
             )
 

@@ -596,7 +596,7 @@ private fun AddonUnavailableDependencyItem(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 AddonIcon(
-                    modifier = Modifier.clip(shape = RoundedCornerShape(10.dp)),
+                    modifier = Modifier.clip(shape = RoundedCornerShape(2.dp)),
                     size = 48.dp,
                     iconUrl = null
                 )
@@ -674,7 +674,7 @@ private fun AddonVersionDependencyItem(
                 modifier = Modifier.fillMaxHeight()
             ) {
                 AddonIcon(
-                    modifier = Modifier.clip(shape = RoundedCornerShape(10.dp)),
+                    modifier = Modifier.clip(shape = RoundedCornerShape(2.dp)),
                     size = 48.dp,
                     iconUrl = iconUrl
                 )

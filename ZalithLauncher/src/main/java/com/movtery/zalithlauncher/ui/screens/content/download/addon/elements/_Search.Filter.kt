@@ -291,11 +291,7 @@ private fun <E> SuggestionsText(
         }
     ) {
         val fieldShape by animateShapeAsState(
-            if (showSuggestions) RoundedCornerShape(
-                topStart = 16.0.dp, topEnd = 16.0.dp,
-                bottomStart = 0.dp, bottomEnd = 0.dp
-            )
-            else RoundedCornerShape(16.0.dp)
+            RoundedCornerShape(2.dp)
         )
         OwnOutlinedTextField(
             modifier = modifier
@@ -334,10 +330,7 @@ private fun <E> SuggestionsText(
             onDismissRequest = {
                 focusManager.clearFocus(false)
             },
-            shape = RoundedCornerShape(
-                topStart = 0.dp, topEnd = 0.dp,
-                bottomStart = 16.0.dp, bottomEnd = 16.0.dp,
-            )
+            shape = RoundedCornerShape(2.dp)
         ) {
             suggestions.forEach { item ->
                 DropdownMenuItem(

@@ -23,6 +23,7 @@ import androidx.compose.material3.MotionScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import com.movtery.zalithlauncher.setting.enums.isLauncherInDarkTheme
@@ -30,12 +31,6 @@ import com.movtery.zalithlauncher.utils.festival.Festival
 import com.movtery.zalithlauncher.utils.festival.LocalFestivals
 import com.movtery.zalithlauncher.viewmodel.BackgroundViewModel
 import com.movtery.zalithlauncher.viewmodel.LocalBackgroundViewModel
-
-/**
- * Hệ số thu nhỏ toàn bộ giao diện launcher (1.0 = kích thước gốc).
- * Giảm số này để GUI nhỏ hơn, tăng để GUI to hơn.
- */
-const val McUiScale = 0.85f
 
 /**
  * Theme của launcher, phong cách Minecraft Launcher.
@@ -53,9 +48,11 @@ fun ZalithLauncherTheme(
     content: @Composable () -> Unit
 ) {
     val base = LocalDensity.current
-    val scaled = remember(base) {
+    McUiScale.load(LocalContext.current)
+    val uiScale = McUiScale.scale
+    val scaled = remember(base, uiScale) {
         Density(
-            density = base.density * McUiScale,
+            density = base.density * uiScale,
             fontScale = base.fontScale
         )
     }

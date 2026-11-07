@@ -604,7 +604,7 @@ fun MemoryPreview(
     Box(
         modifier = modifier
             .height(IntrinsicSize.Min)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(2.dp))
             .background(backgroundColor)
     ) {
         val usedText = usedText(usedMemory, totalMemory)
