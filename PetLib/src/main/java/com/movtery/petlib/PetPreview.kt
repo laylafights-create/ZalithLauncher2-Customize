@@ -23,7 +23,6 @@ import android.view.Surface
 import android.view.TextureView
 import android.view.View
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -38,20 +37,17 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlin.math.PI
 
-/** 点按模型命中时的反馈形式 */
+/** Phản ứng khi chạm vào mô hình. Đã bị loại bỏ: mọi giá trị đều không còn tác dụng, giữ enum để tương thích API. */
 enum class PetTapReaction {
-    /** 无反馈 */
     None,
-    /** 压扁脉冲 */
     Squash,
-    /** 点击反应动画 */
     Interact
 }
 
 /**
  * 玩家模型预览组件
  *
- * @param tapReaction 点按模型命中时的反馈形式
+ * @param tapReaction đã bỏ (không còn phản ứng chạm); giữ tham số để tương thích API
  * @param dragYaw 是否响应拖拽旋转偏航
  */
 @Composable
@@ -61,29 +57,8 @@ fun PetPreview(
     tapReaction: PetTapReaction = PetTapReaction.Squash,
     dragYaw: Boolean = true,
 ) {
-    val gestureModifier = Modifier.let {
-        if (tapReaction != PetTapReaction.None) it.then(Modifier.pointerInput(controller, tapReaction) {
-            detectTapGestures(
-                onPress = { offset ->
-                    if (size.width > 0 && size.height > 0) {
-                        controller.hitTest(
-                            offset.x / size.width,
-                            offset.y / size.height
-                        ) { hit ->
-                            if (hit) {
-                                when (tapReaction) {
-                                    PetTapReaction.Squash -> controller.squashTap(System.nanoTime() / 1_000_000_000f)
-                                    PetTapReaction.Interact -> controller.playInteract()
-                                    PetTapReaction.None -> Unit
-                                }
-                            }
-                        }
-                    }
-                }
-            )
-        }) else it
-    }.let {
-        if (dragYaw) it.then(Modifier.pointerInput(controller) {
+    val gestureModifier = if (dragYaw) {
+        Modifier.pointerInput(controller) {
             // 整宽水平拖拽对应一整圈偏航
             detectDragGestures { change, dragAmount ->
                 change.consume()
@@ -91,7 +66,9 @@ fun PetPreview(
                     controller.rotateYaw(dragAmount.x / size.width * 2f * PI.toFloat())
                 }
             }
-        }) else it
+        }
+    } else {
+        Modifier
     }
 
     var textureView by remember { mutableStateOf<TextureView?>(null) }

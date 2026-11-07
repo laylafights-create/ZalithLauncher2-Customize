@@ -18,10 +18,10 @@
 
 package com.movtery.petlib
 
-/** 循环动画预设 */
+/** Chế độ nền. Idle/đi bộ đã bị loại bỏ: cả hai đều đứng yên; giữ enum để tương thích API. */
 enum class PetAnimation(internal val id: Int) {
-    /** 待机动画 */
+    /** Đứng yên */
     Idle(0),
-    /** 行走动画 */
+    /** Giữ để tương thích; cũng đứng yên */
     Walking(1),
 }

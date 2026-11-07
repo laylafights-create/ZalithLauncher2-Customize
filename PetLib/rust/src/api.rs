@@ -101,14 +101,9 @@ impl PetModel {
             Vec2::new(x_degrees.clamp(0., 85.), y_degrees.clamp(0., 85.)).map(f32::to_radians);
     }
 
-    /// 压扁深度百分比（0..=30，默认 5）。
     /// Phóng to nhân vật quanh tâm khung hình (0.25..=4, 1 = mặc định).
     pub fn set_zoom(&mut self, zoom: f32) {
         self.skeleton.zoom = if zoom.is_finite() { zoom.clamp(0.25, 4.) } else { 1. };
-    }
-
-    pub fn set_squash_depth(&mut self, percent: f32) {
-        self.skeleton.squash_depth = percent.clamp(0., 30.);
     }
 
     /// 注视目标（视图像素坐标）。None 表示回正；
@@ -133,31 +128,6 @@ impl PetModel {
         self.skeleton.stop_animation();
     }
 
-    /// 点按压扁。
-    pub fn squash_tap(&mut self, now: f32) {
-        self.skeleton.squash_tap(now);
-    }
-
-    /// 点击反应动画。
-    pub fn play_interact(&mut self) {
-        self.skeleton.play_interact();
-    }
-
-    /// Phát emote theo chỉ số (0..emote_count).
-    pub fn play_emote(&mut self, index: usize) {
-        self.skeleton.play_emote(index);
-    }
-
-    /// Huỷ emote đang phát.
-    pub fn cancel_emote(&mut self) {
-        self.skeleton.cancel_emote();
-    }
-
-    /// Số emote.
-    pub fn emote_count(&self) -> usize {
-        self.skeleton.emote_count()
-    }
-
     /// 换披风展示姿势（单臂指天）。
     pub fn play_cape_pose(&mut self) {
         self.skeleton.play_cape_pose();
@@ -166,11 +136,6 @@ impl PetModel {
     /// 展示姿势时长（秒）。
     pub fn cape_pose_duration(&self) -> f32 {
         self.skeleton.cape_pose_duration()
-    }
-
-    /// 攻击摆臂。
-    pub fn play_swing(&mut self, now: f32) {
-        self.skeleton.click(now);
     }
 
     /// 渲染一帧到 `out`（预乘 RGBA，长度须为 width*height*4）。
@@ -287,7 +252,7 @@ mod tests {
         // 两个全新实例跑完全相同的帧流，输出必须逐字节一致。
         let (w, h) = (225usize, 262usize);
         let stream = |model: &mut PetModel| {
-            model.play_animation(AnimationId::Idle, 1., true);
+            model.play_cape_pose();
             let mut buf = vec![0u8; w * h * 4];
             for i in 0..30 {
                 model

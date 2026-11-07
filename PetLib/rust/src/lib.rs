@@ -5,8 +5,6 @@ pub mod api;
 mod clip;
 mod clip_data;
 mod clip_fun;
-#[cfg(test)]
-mod clip_parity;
 pub mod lighting;
 mod pool;
 pub mod pose;

@@ -2,15 +2,9 @@
 
 use glam::{EulerRot, Mat4, Quat, Vec2, Vec3};
 
-use crate::animation::{evaluate_walking, AnimFrame, AnimationId, WALKING_PERIOD};
-use crate::clip::{self, ClipPose, IdleClips};
-use crate::clip_data::CLIP_INTERACT;
-use crate::clip_fun::{ALL_SUBS, CAPE_POSE, IDLE_LIVE};
-
-/// 攻击动画时长 (20 tick/s 下的 6 tick)
-const SWING_SECONDS: f32 = 0.30;
-/// 压扁脉冲时长(0.08 上升 + 0.20 回落)
-const SQUASH_SECONDS: f32 = 0.28;
+use crate::animation::{AnimFrame, AnimationId};
+use crate::clip::{self, ClipPose};
+use crate::clip_fun::CAPE_POSE;
 
 pub const TAU_GAZE: f32 = 0.10;
 pub const TAU_YAW: f32 = 0.15;
@@ -65,11 +59,6 @@ pub fn rotation(x: f32, y: f32, z: f32) -> Quat {
     Quat::from_euler(EulerRot::XYZ, x, y, z)
 }
 
-fn smooth(t: f32) -> f32 {
-    let t = t.clamp(0., 1.);
-    t * t * (3. - 2. * t)
-}
-
 /// Smootherstep (Perlin): đạo hàm bậc 1 và 2 đều về 0 ở hai đầu, nên chuyển cảnh giữa các
 /// animation không còn "giật nhẹ" ở điểm bắt đầu/kết thúc như smoothstep. Đối xứng qua 0.5,
 /// nên tổng trọng số của hai track crossfade vẫn bằng 1.
@@ -78,32 +67,16 @@ fn smoother(t: f32) -> f32 {
     t * t * t * (t * (t * 6. - 15.) + 10.)
 }
 
-/// 压扁脉冲包络:0.08 秒平滑下压,0.20 秒平滑回落
-fn squash_pulse(phase: f32) -> f32 {
-    if phase < 0.08 {
-        smooth(phase / 0.08)
-    } else {
-        1. - smooth((phase - 0.08) / 0.20)
-    }
-}
-
 /// 相机基准四元数：把角色正面基准对齐到投影相机的屏幕平面。
 pub fn view_quat() -> Quat {
     Quat::from_rotation_y(front_yaw())
         * Quat::from_rotation_x(-(23f32 / (30f32 * 30f32 + 70f32 * 70f32).sqrt()).atan())
 }
 
-/// 动作来源
+/// Nguồn chuyển động: chỉ còn hành động khoe cape. Mọi thứ khác (idle, đi bộ, emote, chạm...) đã bị loại bỏ,
+/// nhân vật đứng yên ở tư thế nghỉ.
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum Source {
-    /// 基础待机循环
-    Idle,
-    /// 行走
-    Walking,
-    /// 随机待机子动画
-    Sub(usize),
-    /// 点击反应
-    Interact,
     /// 换披风时的展示姿势（单臂指天）
     CapePose,
 }
@@ -115,21 +88,11 @@ struct Track {
     time: f32,
     weight: f32,
     target: f32,
-    /// 一次性轨道的定格时长；循环轨道为 INFINITY
+    /// Thời lượng của track một lần
     duration: f32,
 }
 
 impl Track {
-    fn looping(source: Source) -> Self {
-        Self {
-            source,
-            time: 0.,
-            weight: 1.,
-            target: 1.,
-            duration: f32::INFINITY,
-        }
-    }
-
     fn oneshot(source: Source, duration: f32) -> Self {
         Self {
             source,
@@ -138,25 +101,6 @@ impl Track {
             target: 1.,
             duration,
         }
-    }
-
-    /// 权重从 0 淡入的循环轨道(一次性动作结束后重建基础动画用)
-    fn base_fade_in(source: Source) -> Self {
-        Self {
-            source,
-            time: 0.,
-            weight: 0.,
-            target: 1.,
-            duration: f32::INFINITY,
-        }
-    }
-
-    fn is_base(&self) -> bool {
-        matches!(self.source, Source::Idle | Source::Walking)
-    }
-
-    fn is_oneshot(&self) -> bool {
-        matches!(self.source, Source::Sub(_) | Source::Interact | Source::CapePose)
     }
 }
 
@@ -235,20 +179,17 @@ pub struct Skeleton {
     pub tau_recenter: f32,
     /// 注视夹角限制（弧度，水平 / 垂直）。
     pub head_range: Vec2,
-    /// 压扁深度百分比（0..=30）。
-    pub squash_depth: f32,
     /// Hệ số phóng to nhân vật quanh tâm khung hình (1 = mặc định).
     pub zoom: f32,
 
     gaze_target: Option<Vec2>,
     yaw_target: f32,
 
-    /// 当前基础动画；None 为停止（静止姿态）。
+    /// Trạng thái "nền": chỉ còn quyết định đầu có bám theo con trỏ hay không (Some(.., true)).
+    /// Không còn chuyển động idle/đi bộ nào, nhân vật luôn ở tư thế nghỉ.
     animation: Option<(AnimationId, f32, bool)>,
-    /// 动画轨道：活跃轨道与淡出中的旧轨道并存，按插入序混合。
+    /// Track hành động khoe cape (đang phát và đang fade-out cùng tồn tại, trộn theo thứ tự chèn).
     tracks: Vec<Track>,
-    /// 待机调度（基础循环时间 + 随机子动画计时）
-    idle_clips: IdleClips,
 
     /// 平滑后的注视增量（弧度，水平 / 垂直）。
     gaze: Vec2,
@@ -257,8 +198,6 @@ pub struct Skeleton {
     /// 过扭切断锁存：需求扭角越过放弃角置位，回到恢复角以内复位。
     gaze_twist_cut: bool,
     model_yaw: f32,
-    /// 压扁脉冲已进行时间(秒)，None 为未播放
-    squash_phase: Option<f32>,
 
     // 逐帧输出，render.rs 消费。
     pub arms: [Quat; 2],
@@ -272,13 +211,10 @@ pub struct Skeleton {
     pub cape: Vec2,
     /// 头部最终局部旋转
     pub head: Quat,
+    /// Luôn 1.0 (đã bỏ hiệu ứng nhún khi chạm); render.rs vẫn đọc giá trị này.
     pub squash: f32,
+    /// Luôn 0.0 (đã bỏ hiệu ứng vung tay); render.rs vẫn đọc giá trị này.
     pub body_yaw: f32,
-
-    /// 攻击摆臂已进行时间(秒)，None 为未播放
-    swing_elapsed: Option<f32>,
-    pub swing_progress: f32,
-    swing_side: usize,
 }
 
 impl Default for Skeleton {
@@ -295,18 +231,15 @@ impl Skeleton {
             fade_seconds: FADE_SECONDS,
             tau_recenter: TAU_RECENTER,
             head_range: Vec2::new(60f32.to_radians(), 53f32.to_radians()),
-            squash_depth: 5.,
             zoom: 1.,
             gaze_target: None,
             yaw_target: 0.,
             animation: Some((AnimationId::Idle, 1., true)),
-            tracks: vec![Track::looping(Source::Idle)],
-            idle_clips: IdleClips::new(),
+            tracks: Vec::new(),
             gaze: Vec2::ZERO,
             gaze_yaw_cut: false,
             gaze_twist_cut: false,
             model_yaw: 0.,
-            squash_phase: None,
             arms: [Quat::IDENTITY; 2],
             legs: [Quat::IDENTITY; 2],
             arm_pivots: ARM_REST_PIVOTS,
@@ -319,9 +252,6 @@ impl Skeleton {
             head: Quat::IDENTITY,
             squash: 1.,
             body_yaw: 0.,
-            swing_elapsed: None,
-            swing_progress: 0.,
-            swing_side: 1,
         }
     }
 
@@ -343,122 +273,24 @@ impl Skeleton {
     }
 
     pub fn head_follow(&self) -> bool {
-        // 随机子动画期间头部交给剪辑演绎，不追光标
-        // 结束后视线状态已清零，按 τ_gaze 重新收敛回当前光标。
         self.animation.is_some_and(|(_, _, follow)| follow)
-            && !self
-                .tracks
-                .iter()
-                .any(|t| matches!(t.source, Source::Sub(_)) && t.target == 1.)
     }
 
-    /// 播放动画。
+    /// Đặt chế độ nền. Chỉ ảnh hưởng việc đầu có bám theo con trỏ hay không;
+    /// không còn idle/đi bộ: nhân vật luôn đứng yên ở tư thế nghỉ.
     pub fn play_animation(&mut self, id: AnimationId, speed: f32, head_follow: bool) {
-        for track in &mut self.tracks {
-            if track.is_base() || matches!(track.source, Source::Sub(_)) {
-                track.target = 0.;
-            }
-        }
-        let source = match id {
-            AnimationId::Idle => Source::Idle,
-            AnimationId::Walking => Source::Walking,
-        };
-        self.tracks.push(Track::looping(source));
         self.animation = Some((id, speed.max(0.01), head_follow));
-        self.idle_clips.reset();
     }
 
-    /// 停止动画。
+    /// Tắt chế độ nền (đầu ngừng bám con trỏ). Hành động khoe cape đang chạy không bị ảnh hưởng.
     pub fn stop_animation(&mut self) {
         self.animation = None;
-        for track in &mut self.tracks {
-            track.target = 0.;
-        }
-        self.idle_clips.reset();
-    }
-
-    /// 播放点击反应动画；播放中（未定格）重复调用无效果。
-    pub fn play_interact(&mut self) {
-        if self
-            .tracks
-            .iter()
-            .any(|t| t.source == Source::Interact && t.target == 1. && t.time < t.duration)
-        {
-            return;
-        }
-        for track in &mut self.tracks {
-            if track.is_oneshot() {
-                track.target = 0.;
-            }
-        }
-        self.tracks
-            .push(Track::oneshot(Source::Interact, clip::INTERACT_DURATION));
-    }
-
-    /// Phát emote theo chỉ số trong ALL_SUBS (như bánh xe emote); phát lại sẽ chuyển mượt sang emote mới.
-    pub fn play_emote(&mut self, index: usize) {
-        if index >= ALL_SUBS.len() {
-            return;
-        }
-        for track in &mut self.tracks {
-            if track.is_oneshot() || track.is_base() {
-                track.target = 0.;
-            }
-        }
-        self.tracks
-            .push(Track::oneshot(Source::Sub(index), clip::clip_duration(&ALL_SUBS[index])));
-    }
-
-    /// Huỷ emote đang phát: fade ra và quay lại animation nền.
-    pub fn cancel_emote(&mut self) {
-        let mut cancelled = false;
-        for track in &mut self.tracks {
-            if track.is_oneshot() && track.target == 1. {
-                track.target = 0.;
-                cancelled = true;
-            }
-        }
-        if !cancelled {
-            return;
-        }
-        if let Some((AnimationId::Idle, ..)) = self.animation {
-            self.idle_clips.rebase();
-        }
-        let base = self
-            .tracks
-            .iter_mut()
-            .filter(|t| t.is_base())
-            .max_by(|a, b| a.weight.total_cmp(&b.weight));
-        match base {
-            Some(base) => {
-                base.time = 0.;
-                base.target = 1.;
-            }
-            None => {
-                if let Some((id, _, _)) = self.animation {
-                    let source = match id {
-                        AnimationId::Idle => Source::Idle,
-                        AnimationId::Walking => Source::Walking,
-                    };
-                    self.tracks.push(Track::base_fade_in(source));
-                }
-            }
-        }
-    }
-
-    /// Số emote có thể phát
-    pub fn emote_count(&self) -> usize {
-        ALL_SUBS.len()
     }
 
     /// 播放换披风展示姿势（单臂指天）；播放中重复调用会从头重播。
     pub fn play_cape_pose(&mut self) {
-        // Phải fade cả animation nền: nếu không idle vẫn giữ trọng số 1 và trộn 50/50
-        // với tư thế này, khiến tay chỉ giơ được nửa chừng.
         for track in &mut self.tracks {
-            if track.is_oneshot() || track.is_base() {
-                track.target = 0.;
-            }
+            track.target = 0.;
         }
         self.tracks.push(Track::oneshot(
             Source::CapePose,
@@ -471,92 +303,13 @@ impl Skeleton {
         clip::clip_duration(&CAPE_POSE)
     }
 
-    /// 播放点按压扁。`now` 仅为兼容保留，内部使用有界相位计时。
-    pub fn squash_tap(&mut self, _now: f32) {
-        self.squash_phase = Some(0.);
-        self.squash = 1.;
-    }
-
-    /// 播放攻击摆臂。`now` 仅为兼容保留，内部使用有界相位计时。
-    pub fn click(&mut self, _now: f32) {
-        self.swing_elapsed = Some(0.);
-        self.swing_progress = 0.;
-        self.body_yaw = 0.;
-    }
-
     /// 推进所有轨道。
     fn advance(&mut self, dt: f32) {
-        let mut finished = false;
-        let mut finished_emote = false;
         for track in &mut self.tracks {
-            if !track.is_oneshot() {
-                continue;
-            }
             track.time = (track.time + dt.min(0.05)).min(track.duration);
             if track.target == 1. && track.time >= track.duration {
                 track.target = 0.;
-                finished = true;
-                finished_emote |= matches!(track.source, Source::Sub(_));
             }
-        }
-        if finished {
-            if let Some((AnimationId::Idle, ..)) = self.animation {
-                if finished_emote {
-                    self.idle_clips.rebase_after_emote();
-                } else {
-                    self.idle_clips.rebase();
-                }
-            }
-            // 基础轨道若已在淡出完成后被回收
-            let base = self
-                .tracks
-                .iter_mut()
-                .filter(|t| t.is_base())
-                .max_by(|a, b| a.weight.total_cmp(&b.weight));
-            match base {
-                Some(base) => {
-                    base.time = 0.;
-                    base.target = 1.;
-                }
-                None => {
-                    if let Some((id, _, _)) = self.animation {
-                        let source = match id {
-                            AnimationId::Idle => Source::Idle,
-                            AnimationId::Walking => Source::Walking,
-                        };
-                        self.tracks.push(Track::base_fade_in(source));
-                    }
-                }
-            }
-        }
-
-        // 基础循环推进
-        match self.animation {
-            Some((AnimationId::Idle, speed, _)) => {
-                let oneshot_active = self.tracks.iter().any(|t| t.is_oneshot() && t.target == 1.);
-                let fired = if oneshot_active {
-                    None
-                } else {
-                    self.idle_clips.tick(dt, speed)
-                };
-                if let Some(index) = fired {
-                    for track in &mut self.tracks {
-                        if track.is_base() {
-                            track.target = 0.;
-                        }
-                    }
-                    let duration = clip::clip_duration(&ALL_SUBS[index]);
-                    self.tracks
-                        .push(Track::oneshot(Source::Sub(index), duration));
-                }
-            }
-            Some((AnimationId::Walking, speed, _)) => {
-                if let Some(base) = self.tracks.iter_mut().find(|t| t.source == Source::Walking) {
-                    // 按整周期回绕:长时间行走不会损失 f32 相位精度
-                    base.time = (base.time + (dt * speed).min(0.05)) % WALKING_PERIOD;
-                }
-            }
-            None => {}
         }
 
         // 权重线性斜坡与轨道回收。
@@ -575,12 +328,8 @@ impl Skeleton {
         snapshot_from_frame(AnimFrame::rest_with_open_cape(), cape_z)
     }
 
-    fn sample_track(&self, track: &Track, cape_z: f32) -> LimbSnapshot {
+    fn sample_track(&self, track: &Track) -> LimbSnapshot {
         match track.source {
-            Source::Idle => snapshot_from_pose(clip::sample(&IDLE_LIVE, self.idle_clips.base_time)),
-            Source::Walking => snapshot_from_frame(evaluate_walking(track.time), cape_z),
-            Source::Sub(index) => snapshot_from_pose(clip::sample(&ALL_SUBS[index], track.time)),
-            Source::Interact => snapshot_from_pose(clip::sample(&CLIP_INTERACT, track.time)),
             Source::CapePose => snapshot_from_pose(clip::sample(&CAPE_POSE, track.time)),
         }
     }
@@ -596,7 +345,7 @@ impl Skeleton {
             }
             // Ease-in-out cho chuyển cảnh (smootherstep đối xứng nên tổng trọng số vẫn = 1)
             let w = smoother(track.weight);
-            let pose = self.sample_track(track, cape_z);
+            let pose = self.sample_track(track);
             acc = Some(match acc {
                 None => pose,
                 Some(s) => s.blend(pose, w / (acc_weight + w)),
@@ -686,44 +435,9 @@ impl Skeleton {
             .slerp(head_target, 1. - (-dt / tau).exp())
             .normalize();
 
-        // 压扁脉冲。
-        if let Some(phase) = self.squash_phase.as_mut() {
-            *phase += dt;
-            if *phase >= SQUASH_SECONDS {
-                self.squash_phase = None;
-            }
-        }
-        self.squash = 1.
-            - self.squash_phase.map_or(0., squash_pulse)
-                * (self.squash_depth / 100.).clamp(0., 0.3);
-
-        // 攻击摆臂。
-        if let Some(elapsed) = self.swing_elapsed.as_mut() {
-            *elapsed += dt;
-            if *elapsed >= SWING_SECONDS {
-                self.swing_elapsed = None;
-            }
-        }
-        self.swing_progress = self
-            .swing_elapsed
-            .map_or(0., |e| (e / SWING_SECONDS).clamp(0., 1.));
-        self.body_yaw = if self.swing_elapsed.is_some() {
-            -(self.swing_progress.sqrt() * std::f32::consts::TAU).sin()
-                * 0.2
-                * if self.swing_side == 0 { -1. } else { 1. }
-        } else {
-            0.
-        };
-        if self.swing_elapsed.is_some() {
-            let side = self.swing_side;
-            let sign = if side == 0 { -1. } else { 1. };
-            let p = self.swing_progress;
-            let pi = std::f32::consts::PI;
-            // 原版 HumanoidModel 攻击曲线：四次缓动、躯干扭转与侧向翻滚。
-            let eased = 1. - (1. - p).powi(4);
-            let strike = (eased * pi).sin() * 1.2 + (p * pi).sin() * -(self.gaze.y - 0.7) * 0.75;
-            self.arms[side] = rotation(strike, self.body_yaw * 3., -sign * ((p * pi).sin() * 0.4));
-        }
+        // Đã bỏ nhún khi chạm và vung tay: giữ cố định.
+        self.squash = 1.;
+        self.body_yaw = 0.;
     }
 
     /// 以相机隐含距离解算指向光标的 yaw/pitch（未按颈部活动范围夹取）。
@@ -750,20 +464,6 @@ impl Skeleton {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pose::rotation;
-
-    fn sub_active(s: &Skeleton) -> bool {
-        s.tracks
-            .iter()
-            .any(|t| matches!(t.source, Source::Sub(_)) && t.target == 1.)
-    }
-
-    fn active_sub(s: &Skeleton) -> Option<usize> {
-        s.tracks.iter().find_map(|t| match t.source {
-            Source::Sub(index) if t.target == 1. => Some(index),
-            _ => None,
-        })
-    }
 
     #[test]
     fn gaze_recenters_after_target_removed() {
@@ -782,44 +482,10 @@ mod tests {
     }
 
     #[test]
-    fn random_sub_suspends_gaze_until_finished() {
-        let mut s = Skeleton::new();
-        let view = Vec2::new(450., 525.);
-        s.set_gaze_target(Some(Vec2::new(900., 100.)));
-        // 2 秒：注视收敛
-        for i in 0..120 {
-            s.update(view, i as f32 / 60., 1. / 60.);
-        }
-        assert!(s.gaze.length() > 0.01);
-        // 推进到子动画播放中（固定种子下 8 秒触发）
-        for i in 120..540 {
-            s.update(view, i as f32 / 60., 1. / 60.);
-        }
-        assert!(sub_active(&s), "sub must be playing at 9s");
-        // 子动画期间移动光标：头部只跟剪辑，不追光标
-        s.set_gaze_target(Some(Vec2::new(100., 400.)));
-        for i in 540..570 {
-            s.update(view, i as f32 / 60., 1. / 60.);
-        }
-        assert!(s.gaze.length() < 0.001, "gaze must be suspended during sub");
-        assert!(
-            s.head.abs_diff_eq(s.head_rot, 0.2),
-            "head must follow the clip during sub"
-        );
-        // 子动画播完（11 秒）：头部平滑转回新光标位置
-        for i in 570..800 {
-            s.update(view, i as f32 / 60., 1. / 60.);
-        }
-        assert!(!sub_active(&s), "sub must have finished by 13.3s");
-        assert!(s.gaze.length() > 0.01, "gaze must resume after sub");
-    }
-
-    #[test]
     fn gaze_follows_directly_within_twist_limit() {
         let mut s = Skeleton::new();
         let view = Vec2::new(450., 525.);
         // 需求角在自然范围内：直接跟随，注视收敛到需求角本身。
-        // 只跑 5 秒：8 秒起随机子动画会暂时接管头部。
         s.set_gaze_target(Some(Vec2::new(920., 262.5)));
         for i in 0..300 {
             s.update(view, i as f32 / 60., 1. / 60.);
@@ -849,8 +515,6 @@ mod tests {
         let mut s = Skeleton::new();
         let view = Vec2::new(450., 525.);
         s.set_gaze_target(Some(Vec2::new(920., 262.5)));
-        // 全程压在 8 秒（首次随机子动画）之前：子动画会重置视线状态、
-        // 结束后按新鲜状态重新评估切断锁存。
         for i in 0..90 {
             s.update(view, i as f32 / 60., 1. / 60.);
         }
@@ -887,7 +551,6 @@ mod tests {
     #[test]
     fn gaze_rules_mirror_for_rightward_turns() {
         // 上述规则的镜像：身体向右转、光标在屏幕左侧，判定量级必须一致。
-        // 全程压在 8 秒（首次随机子动画）之前。
         let mut s = Skeleton::new();
         let view = Vec2::new(450., 525.);
         // 需求角超夹角上限、未过扭：贴在负向夹角上限。
@@ -977,8 +640,7 @@ mod tests {
         for i in 0..600 {
             s.update(view, i as f32 / 60., 1. / 60.);
         }
-        // 无输入时头部与身体朝向对齐（仅存动画摆动），不额外朝相机偏转。
-        // 子动画的头部摆动存在 τ_recenter 量级的追踪滞后，容差随之放宽。
+        // 无输入时头部与身体朝向对齐，不额外朝相机偏转。
         assert!(
             s.head.abs_diff_eq(s.head_rot, 0.2),
             "head={:?} sway={:?}",
@@ -987,444 +649,77 @@ mod tests {
         );
     }
 
+    /// Khi đứng yên (không có cape pose) nhân vật phải ở đúng tư thế nghỉ, không có chuyển động nào.
     #[test]
-    fn cape_pose_fully_replaces_base() {
+    fn stands_perfectly_still_without_cape_pose() {
         let mut s = Skeleton::new();
         let view = Vec2::new(450., 525.);
-        for i in 0..30 {
+        // 20 giây: trước đây idle/emote ngẫu nhiên sẽ kích hoạt trong khoảng này.
+        for i in 0..(60 * 20) {
             s.update(view, i as f32 / 60., 1. / 60.);
+            assert!(s.tracks.is_empty(), "no tracks expected: {:?}", s.tracks);
+            assert!(s.body_pos.abs_diff_eq(Vec3::ZERO, 1e-6));
+            assert!(s.arms.iter().all(|q| q.abs_diff_eq(Quat::IDENTITY, 1e-6)));
+            assert!(s.legs.iter().all(|q| q.abs_diff_eq(Quat::IDENTITY, 1e-6)));
+            assert_eq!(s.leg_pivots, LEG_REST_PIVOTS);
+            assert_eq!(s.arm_pivots, ARM_REST_PIVOTS);
+            assert_eq!(s.squash, 1.);
+            assert_eq!(s.body_yaw, 0.);
         }
+        assert!((s.cape.x - std::f32::consts::PI * 0.06).abs() < 0.01);
+    }
+
+    /// Hành động khoe cape: đổi tư thế rõ rệt, rồi quay về đúng tư thế nghỉ và dọn sạch track.
+    #[test]
+    fn cape_pose_plays_then_returns_to_rest() {
+        let mut s = Skeleton::new();
+        let view = Vec2::new(450., 525.);
         s.play_cape_pose();
-        for i in 0..40 {
-            s.update(view, 1. + i as f32 / 60., 1. / 60.);
-        }
-        let pose = s.tracks.iter().find(|t| t.source == Source::CapePose).unwrap();
-        assert!(pose.weight > 0.99, "pose weight {}", pose.weight);
-        assert!(!s.tracks.iter().any(|t| t.is_base() && t.weight > 0.01));
-    }
-
-    #[test]
-    fn emote_play_and_cancel() {
-        let mut s = Skeleton::new();
-        let view = Vec2::new(450., 525.);
-        for i in 0..30 {
+        let duration = s.cape_pose_duration();
+        let mut raised = false;
+        let frames = ((duration + 1.) * 60.) as usize;
+        for i in 0..frames {
             s.update(view, i as f32 / 60., 1. / 60.);
-        }
-        s.play_emote(5);
-        assert!(s.tracks.iter().any(|t| t.source == Source::Sub(5) && t.target == 1.));
-        s.play_emote(9999); // chỉ số ngoài phạm vi: bỏ qua
-        for i in 0..30 {
-            s.update(view, 1. + i as f32 / 60., 1. / 60.);
-        }
-        s.cancel_emote();
-        for i in 0..60 {
-            s.update(view, 2. + i as f32 / 60., 1. / 60.);
-        }
-        assert!(!s.tracks.iter().any(|t| matches!(t.source, Source::Sub(_))));
-        assert!(s.tracks.iter().any(|t| t.is_base() && t.target == 1.));
-    }
-
-    #[test]
-    fn interact_overrides_then_returns() {
-        let mut s = Skeleton::new();
-        let view = Vec2::new(450., 525.);
-        for i in 0..60 {
-            s.update(view, i as f32 / 60., 1. / 60.);
-        }
-        s.play_interact();
-        s.play_interact(); // 播放中重复调用无效
-        assert_eq!(
-            s.tracks
-                .iter()
-                .filter(|t| t.source == Source::Interact)
-                .count(),
-            1
-        );
-        s.update(view, 1.01, 1. / 60.);
-        // 0.5 秒后结束：回归基础动画并重新计时随机子动画
-        for i in 1..40 {
-            s.update(view, 1.01 + i as f32 / 60., 1. / 60.);
-        }
-        assert!(
-            !s.tracks
-                .iter()
-                .any(|t| t.source == Source::Interact && t.target == 1.),
-            "interact must end after 0.5s"
-        );
-        // 结束后重新计时（当帧起倒计时已扣除若干帧的推进量）
-        assert!(
-            s.idle_clips.countdown > clip::SUB_INTERVAL - 0.5,
-            "sub countdown must be re-armed after interact"
-        );
-    }
-
-    #[test]
-    fn play_animation_keeps_interact_until_finished() {
-        // interact 是 0.5 秒一次性动作：切换基础动画不打断它，
-        // 播完后淡回到切换后的动画。停止动画则立即撤销它。
-        let mut s = Skeleton::new();
-        let view = Vec2::new(450., 525.);
-        for i in 0..60 {
-            s.update(view, i as f32 / 60., 1. / 60.);
-        }
-        s.play_interact();
-        s.play_animation(AnimationId::Walking, 1., true);
-        s.update(view, 1.01, 1. / 60.);
-        assert!(
-            s.tracks
-                .iter()
-                .any(|t| t.source == Source::Interact && t.target == 1.),
-            "switch must not cancel interact"
-        );
-        for i in 1..40 {
-            s.update(view, 1.01 + i as f32 / 60., 1. / 60.);
-        }
-        assert!(!s
-            .tracks
-            .iter()
-            .any(|t| t.source == Source::Interact && t.target == 1.));
-
-        s.play_interact();
-        s.stop_animation();
-        assert!(
-            !s.tracks
-                .iter()
-                .any(|t| t.source == Source::Interact && t.target == 1.),
-            "stop must cancel interact"
-        );
-    }
-
-    #[test]
-    fn long_run_stays_finite() {
-        // 10 虚拟分钟：注视持续输入、周期性 interact/压扁、待机与行走交替,
-        // 宿主时钟取一年后的巨值(长 uptime 场景,精度极差),
-        // 全程不得出现非有限值、姿态发散或轨道泄漏。
-        let mut s = Skeleton::new();
-        let view = Vec2::new(450., 525.);
-        s.set_gaze_target(Some(Vec2::new(600., 200.)));
-        let huge_now = 86_400. * 365.;
-        for i in 0..(60 * 60 * 10) {
-            if i % 900 == 300 {
-                s.play_interact();
-            }
-            if i % 1800 == 0 {
-                s.squash_tap(huge_now);
-            }
-            if i % 3600 == 0 {
-                if (i / 3600) % 2 == 0 {
-                    s.play_animation(AnimationId::Walking, 1., true);
-                } else {
-                    s.play_animation(AnimationId::Idle, 1., true);
-                }
-            }
-            s.update(view, huge_now + i as f32 / 60., 1. / 60.);
-            assert!(s.head.is_finite());
-            assert!(s.body_pos.is_finite());
             assert!(s.arms.iter().all(|q| q.is_finite()));
-            assert!(s.arm_pivots.iter().all(|v| v.is_finite()));
-            assert!(s.leg_pivots.iter().all(|v| v.is_finite()));
-            assert!(s.cape.is_finite());
-            assert!(s.squash.is_finite());
-            assert!(
-                s.tracks.len() <= 4,
-                "tracks must stay bounded: {:?}",
-                s.tracks
-            );
+            assert!(s.tracks.len() <= 1, "tracks must stay bounded: {:?}", s.tracks);
+            raised |= !s.arms[1].abs_diff_eq(Quat::IDENTITY, 0.5);
+        }
+        assert!(raised, "cape pose must move the arm");
+        assert!(s.tracks.is_empty(), "track must be reclaimed: {:?}", s.tracks);
+        assert!(s.body_pos.abs_diff_eq(Vec3::ZERO, 0.001));
+        assert!(s.arms.iter().all(|q| q.abs_diff_eq(Quat::IDENTITY, 0.01)));
+    }
+
+    /// Gọi lại giữa chừng: phát lại từ đầu, không tích tụ track.
+    #[test]
+    fn cape_pose_restart_does_not_leak_tracks() {
+        let mut s = Skeleton::new();
+        let view = Vec2::new(450., 525.);
+        for i in 0..600 {
+            if i % 20 == 0 {
+                s.play_cape_pose();
+            }
+            s.update(view, i as f32 / 60., 1. / 60.);
+            assert!(s.tracks.len() <= 12, "tracks leaked: {}", s.tracks.len());
+            assert!(s.cape.is_finite() && s.head.is_finite() && s.body_pos.is_finite());
             assert!(s.tracks.iter().all(|t| (0.0..=1.0).contains(&t.weight)));
         }
-        assert!(
-            (s.head.length() - 1.).abs() < 0.001,
-            "head must stay normalized"
-        );
     }
 
-    /// 压扁/摆臂的相位计时不得依赖宿主绝对时钟:
-    /// 宿主时钟是设备开机以来的秒数,长 uptime 下 f32 精度极差。
+    /// stop_animation chỉ tắt việc đầu bám con trỏ, không cắt hành động khoe cape.
     #[test]
-    fn squash_and_swing_survive_huge_host_clock() {
+    fn stop_animation_keeps_cape_pose() {
         let mut s = Skeleton::new();
         let view = Vec2::new(450., 525.);
-        let huge = 86_400. * 365.; // 一年的秒数
-        s.squash_tap(huge);
-        s.click(huge);
-        for i in 0..30 {
-            s.update(view, huge + i as f32 / 60., 1. / 60.);
-        }
-        assert!(s.squash_phase.is_none(), "squash must finish");
-        assert!(s.swing_elapsed.is_none(), "swing must finish");
-        assert!(
-            (s.squash - 1.).abs() < 1e-6,
-            "squash must return to full height"
-        );
-    }
-
-    /// 行走轨道时间按整周期回绕:跨过回绕点后姿态与连续累计同相。
-    #[test]
-    fn walking_time_wraps_in_skeleton() {
-        let mut s = Skeleton::new();
-        s.play_animation(AnimationId::Walking, 1., true);
-        if let Some(base) = s.tracks.iter_mut().find(|t| t.source == Source::Walking) {
-            base.time = WALKING_PERIOD - 0.01;
-        }
-        let view = Vec2::new(450., 525.);
+        s.play_cape_pose();
+        s.stop_animation();
+        assert!(!s.head_follow());
         for i in 0..30 {
             s.update(view, i as f32 / 60., 1. / 60.);
         }
-        let track = s
+        assert!(s
             .tracks
             .iter()
-            .find(|t| t.source == Source::Walking)
-            .expect("walking track");
-        assert!(
-            track.time < WALKING_PERIOD,
-            "walking time must stay wrapped"
-        );
-        let f = evaluate_walking(track.time);
-        let expected = rotation(f.arms[0].x, f.arms[0].y, f.arms[0].z);
-        assert!(s.arms[0].abs_diff_eq(expected, 1e-4));
-    }
-
-    #[test]
-    fn animation_switch_blends_from_current_pose() {
-        let mut s = Skeleton::new();
-        let view = Vec2::new(450., 525.);
-        for i in 0..60 {
-            s.update(view, i as f32 / 60., 1. / 60.);
-        }
-        let before = s.arms[0];
-        s.play_animation(AnimationId::Walking, 0.8, true);
-        s.update(view, 1.01, 1. / 60.);
-        // 切换瞬间不应直接跳到行走目标。
-        let f = evaluate_walking(0.08);
-        let walking = rotation(f.arms[0].x, f.arms[0].y, f.arms[0].z);
-        assert!(before.abs_diff_eq(s.arms[0], 0.4));
-        assert!(!s.arms[0].abs_diff_eq(walking, 0.0001));
-        for i in 2..180 {
-            s.update(view, 1. + i as f32 / 60., 1. / 60.);
-        }
-        // 交叉淡入淡出完成后只剩行走轨道,姿态与轨道时间严格一致。
-        assert_eq!(s.tracks.len(), 1);
-        assert_eq!(s.tracks[0].source, Source::Walking);
-        let f = evaluate_walking(s.tracks[0].time);
-        let walking = rotation(f.arms[0].x, f.arms[0].y, f.arms[0].z);
-        assert!(s.arms[0].abs_diff_eq(walking, 0.0001));
-    }
-
-    #[test]
-    fn squash_taps_restart_from_full_height() {
-        let mut s = Skeleton::new();
-        let view = Vec2::new(450., 525.);
-        s.squash_tap(0.);
-        for i in 0..6 {
-            s.update(view, i as f32 / 60., 1. / 60.);
-        }
-        let mid = s.squash;
-        assert!(mid < 1.);
-        // 连续点按：重启后脉冲回到满高。
-        s.squash_tap(0.1);
-        s.update(view, 0.11, 1. / 60.);
-        assert!(s.squash > mid);
-    }
-
-    #[test]
-    fn scheduler_fires_sub_after_interval_and_returns() {
-        let mut s = Skeleton::new();
-        let view = Vec2::new(450., 525.);
-        let dt = 1. / 60.;
-        let mut now = 0.;
-        // 8 秒后触发子动画（允许 ±0.1s）
-        let mut fired_at = None;
-        for i in 0..600 {
-            s.update(view, now, dt);
-            now += dt;
-            if sub_active(&s) {
-                fired_at = Some(i);
-                break;
-            }
-        }
-        let fired_at = fired_at.expect("sub must fire within 10s");
-        assert!((fired_at as f32 * dt - clip::SUB_INTERVAL).abs() < 0.1);
-        // Thời lượng phụ thuộc emote được chọn (các clip dài tới ~4s): chờ đúng theo clip đó.
-        let index = active_sub(&s).expect("active sub");
-        let duration = clip::clip_duration(&ALL_SUBS[index]);
-        let mut returned = false;
-        for _ in 0..((duration * 60.) as usize + 30) {
-            s.update(view, now, dt);
-            now += dt;
-            if !sub_active(&s) {
-                returned = true;
-                break;
-            }
-        }
-        assert!(returned, "sub must return to base after its own duration ({duration}s)");
-        // Sau emote, bộ đếm nghỉ ngắn REPEAT_INTERVAL: trong khoảng đó không được kích hoạt lại.
-        for _ in 0..((clip::REPEAT_INTERVAL - 0.6) * 60.) as usize {
-            s.update(view, now, dt);
-            now += dt;
-            assert!(!sub_active(&s));
-        }
-    }
-
-    /// 子动画播完后必须淡回基础待机循环,而非落到静止姿态。
-    /// 回归测试:基础轨道淡出后会被回收,子动画结束时须重建淡入。
-    #[test]
-    fn sub_finish_fades_back_to_base_idle() {
-        let mut s = Skeleton::new();
-        let view = Vec2::new(450., 525.);
-        let dt = 1. / 60.;
-        let mut now = 0.;
-        // 等首个子动画触发(固定种子下 8 秒)
-        for _ in 0..(8 * 60) {
-            s.update(view, now, dt);
-            now += dt;
-        }
-        assert!(sub_active(&s), "sub must have fired");
-        // Phát hết emote được chọn (thời lượng theo clip) rồi đợi fade-out kết thúc
-        let index = active_sub(&s).expect("active sub");
-        let frames = (clip::clip_duration(&ALL_SUBS[index]) * 60.) as usize + 30;
-        for _ in 0..frames {
-            s.update(view, now, dt);
-            now += dt;
-        }
-        assert!(!sub_active(&s));
-        assert!(
-            s.tracks.iter().any(|t| t.is_base() && t.target == 1.),
-            "base track must be revived: {:?}",
-            s.tracks
-        );
-        // 再跑 1 秒:姿态必须是 idle 剪辑(躯干下沉),静止姿态的 body_pos.y 为 0
-        for _ in 0..60 {
-            s.update(view, now, dt);
-            now += dt;
-        }
-        assert!(
-            s.body_pos.y < -0.3,
-            "must fade back to idle clip, body_pos.y = {}",
-            s.body_pos.y
-        );
-    }
-
-    #[test]
-    fn scheduler_never_repeats_last_sub() {
-        let mut s = Skeleton::new();
-        let view = Vec2::new(450., 525.);
-        let dt = 0.05;
-        let mut last = None;
-        let mut fired = 0;
-        let mut prev_active = false;
-        let mut now = 0.;
-        while fired < 12 {
-            s.update(view, now, dt);
-            now += dt;
-            assert!(now < 600., "scheduler stalled");
-            let active = active_sub(&s);
-            if active.is_some() && !prev_active {
-                fired += 1;
-                if let Some(prev) = last {
-                    assert_ne!(Some(prev), active, "sub must not repeat consecutively");
-                }
-                last = active;
-            }
-            prev_active = active.is_some();
-        }
-    }
-
-    #[test]
-    fn play_animation_restarts_idle_schedule() {
-        let mut s = Skeleton::new();
-        let view = Vec2::new(450., 525.);
-        let dt = 1. / 60.;
-        let mut now = 0.;
-        for _ in 0..500 {
-            s.update(view, now, dt);
-            now += dt;
-        }
-        s.play_animation(AnimationId::Idle, 1., true);
-        // 重启后重新计时:一个完整间隔内不触发
-        for i in 0..470 {
-            s.update(view, now, dt);
-            now += dt;
-            assert!(!sub_active(&s), "fired early at frame {i}");
-        }
-    }
-
-    #[test]
-    fn base_idle_time_wraps_for_looping() {
-        let mut s = Skeleton::new();
-        let view = Vec2::new(450., 525.);
-        let duration = clip::clip_duration(&IDLE_LIVE);
-        // 覆盖多轮循环与子动画穿插:基础采样时间必须始终落在循环长度内
-        let mut now = 0.;
-        for _ in 0..400 {
-            s.update(view, now, 0.05);
-            now += 0.05;
-            assert!(
-                (0.0..=duration).contains(&s.idle_clips.base_time),
-                "base time {} must wrap within {duration}",
-                s.idle_clips.base_time
-            );
-        }
-    }
-
-    #[test]
-    fn scheduler_runs_indefinitely() {
-        // 20 虚拟分钟:子动画持续触发(不因时间累计而停摆),
-        // 基础循环相位持续回绕(不冻结在末帧)。
-        let mut s = Skeleton::new();
-        let view = Vec2::new(450., 525.);
-        let dt = 1. / 60.;
-        let mut sub_fires = 0;
-        let mut phase_wraps = 0;
-        let mut last_idle_time = 0f32;
-        let mut prev_active = false;
-        let mut now = 0.;
-        for _ in 0..(60 * 60 * 20) {
-            s.update(view, now, dt);
-            now += dt;
-            let active = sub_active(&s);
-            if !active {
-                if s.idle_clips.base_time < last_idle_time {
-                    phase_wraps += 1;
-                }
-                last_idle_time = s.idle_clips.base_time;
-            } else if !prev_active {
-                sub_fires += 1;
-            }
-            prev_active = active;
-        }
-        assert!(sub_fires > 100, "subs must keep firing: {sub_fires}");
-        // Idle lặp 8s và chỉ chạy lúc không có emote (~55% thời gian): 20 phút ≈ 85 vòng.
-        assert!(phase_wraps > 40, "idle must keep looping: {phase_wraps}");
-    }
-
-    /// 腿挂静态髋部:躯干位移(含 idle 的 -0.64px 下沉)不得出现在脚上。
-    #[test]
-    fn body_motion_does_not_carry_legs() {
-        let mut s = Skeleton::new();
-        let view = Vec2::new(450., 525.);
-        for i in 0..180 {
-            s.update(view, i as f32 / 60., 1. / 60.);
-        }
-        // idle 阶段躯干持续下沉,腿枢轴必须保持在髋部静止位置。
-        assert!(s.body_pos.y < -0.3, "idle body must sink: {}", s.body_pos.y);
-        assert_eq!(s.leg_pivots[0], LEG_REST_PIVOTS[0]);
-        assert_eq!(s.leg_pivots[1], LEG_REST_PIVOTS[1]);
-    }
-
-    /// 停止动画后所有轨道淡出,输出收敛到静止姿态。
-    #[test]
-    fn stop_fades_to_rest_pose() {
-        let mut s = Skeleton::new();
-        let view = Vec2::new(450., 525.);
-        for i in 0..60 {
-            s.update(view, i as f32 / 60., 1. / 60.);
-        }
-        s.stop_animation();
-        for i in 60..120 {
-            s.update(view, i as f32 / 60., 1. / 60.);
-        }
-        assert!(s.tracks.is_empty(), "tracks must drain: {:?}", s.tracks);
-        assert!(s.body_pos.abs_diff_eq(Vec3::ZERO, 0.001));
-        assert!((s.cape.x - std::f32::consts::PI * 0.06).abs() < 0.01);
+            .any(|t| t.source == Source::CapePose && t.target == 1.));
     }
 }

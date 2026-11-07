@@ -49,8 +49,6 @@ final class PetLibNative {
 
     static native void nativeSetHeadRange(long ptr, float x, float y);
 
-    static native void nativeSetSquashDepth(long ptr, float depth);
-
     static native void nativeSetZoom(long ptr, float zoom);
 
     static native void nativeSetGaze(long ptr, float x, float y, boolean hasTarget);
@@ -63,17 +61,7 @@ final class PetLibNative {
 
     static native void nativeStopAnimation(long ptr);
 
-    static native void nativeSquashTap(long ptr, float now);
-
-    static native void nativePlaySwing(long ptr, float now);
-
-    static native void nativePlayInteract(long ptr);
-
     static native void nativePlayCapePose(long ptr);
-
-    static native void nativePlayEmote(long ptr, int index);
-
-    static native void nativeCancelEmote(long ptr);
 
     /**
      * 渲染一帧，结果直写 bitmap 的像素内存（RGBA_8888、行连续、尺寸匹配）

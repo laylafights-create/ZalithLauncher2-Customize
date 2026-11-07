@@ -333,21 +333,6 @@ pub extern "system" fn Java_com_movtery_petlib_PetLibNative_nativeSetZoom(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_movtery_petlib_PetLibNative_nativeSetSquashDepth(
-    _env: JNIEnv,
-    _class: JClass,
-    ptr: jlong,
-    depth: jfloat,
-) {
-    guard(|| {
-        // SAFETY: 句柄由宿主渲染线程独占使用。
-        if let Some(model) = unsafe { model_from(ptr) } {
-            model.set_squash_depth(depth);
-        }
-    })
-}
-
-#[no_mangle]
 pub extern "system" fn Java_com_movtery_petlib_PetLibNative_nativeSetGaze(
     _env: JNIEnv,
     _class: JClass,
@@ -418,81 +403,6 @@ pub extern "system" fn Java_com_movtery_petlib_PetLibNative_nativeStopAnimation(
         // SAFETY: 句柄由宿主渲染线程独占使用。
         if let Some(model) = unsafe { model_from(ptr) } {
             model.stop_animation();
-        }
-    })
-}
-
-#[no_mangle]
-pub extern "system" fn Java_com_movtery_petlib_PetLibNative_nativeSquashTap(
-    _env: JNIEnv,
-    _class: JClass,
-    ptr: jlong,
-    now: jfloat,
-) {
-    guard(|| {
-        // SAFETY: 句柄由宿主渲染线程独占使用。
-        if let Some(model) = unsafe { model_from(ptr) } {
-            model.squash_tap(now);
-        }
-    })
-}
-
-#[no_mangle]
-pub extern "system" fn Java_com_movtery_petlib_PetLibNative_nativePlaySwing(
-    _env: JNIEnv,
-    _class: JClass,
-    ptr: jlong,
-    now: jfloat,
-) {
-    guard(|| {
-        // SAFETY: 句柄由宿主渲染线程独占使用。
-        if let Some(model) = unsafe { model_from(ptr) } {
-            model.play_swing(now);
-        }
-    })
-}
-
-#[no_mangle]
-pub extern "system" fn Java_com_movtery_petlib_PetLibNative_nativePlayInteract(
-    _env: JNIEnv,
-    _class: JClass,
-    ptr: jlong,
-) {
-    guard(|| {
-        // SAFETY: 句柄由宿主渲染线程独占使用。
-        if let Some(model) = unsafe { model_from(ptr) } {
-            model.play_interact();
-        }
-    })
-}
-
-#[no_mangle]
-pub extern "system" fn Java_com_movtery_petlib_PetLibNative_nativePlayEmote(
-    _env: JNIEnv,
-    _class: JClass,
-    ptr: jlong,
-    index: jint,
-) {
-    guard(|| {
-        // SAFETY: 句柄由宿主渲染线程独占使用。
-        if let Some(model) = unsafe { model_from(ptr) } {
-            if index >= 0 {
-                model.play_emote(index as usize);
-            }
-        }
-    })
-}
-
-#[no_mangle]
-pub extern "system" fn Java_com_movtery_petlib_PetLibNative_nativeCancelEmote(
-    _env: JNIEnv,
-    _class: JClass,
-    ptr: jlong,
-) {
-    guard(|| {
-        // SAFETY: 句柄由宿主渲染线程独占使用。
-        if let Some(model) = unsafe { model_from(ptr) } {
-            model.cancel_emote();
         }
     })
 }

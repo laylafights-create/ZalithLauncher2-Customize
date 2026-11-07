@@ -137,7 +137,7 @@ class PetController(
         cape: ByteArray?,
         onError: ((String) -> Unit)? = null,
         showOff: Boolean = true,
-        showOffMillis: Long = 3000L
+        showOffMillis: Long = 4900L
     ) {
         post {
             val error = PetLibNative.nativeSetCape(ptr, cape)
@@ -152,19 +152,37 @@ class PetController(
 
     private val recenterAfterShowOff = Runnable { recenterYaw() }
 
+    // Xoay trên không lúc bật cao: một vòng 360° chia 4 bước 90° (setYaw đi đường ngắn nhất nên không thể đặt +360° một lần).
+    private val leapSpinSteps = List(4) { spinStep((PI / 2).toFloat()) }
+
+    private fun spinStep(delta: Float) = Runnable {
+        // Cộng dồn vào yaw MỤC TIÊU (không phải yaw hiện tại đang bị làm mượt, vì nó trễ và sẽ làm hụt vòng xoay)
+        val next = yawTarget + delta
+        yawTarget = next
+        PetLibNative.nativeSetYaw(ptr, next)
+    }
+
+    private fun cancelShowOffCallbacks() {
+        handler.removeCallbacks(recenterAfterShowOff)
+        leapSpinSteps.forEach { handler.removeCallbacks(it) }
+    }
+
     /**
-     * Khoe cape: xoay lưng, giơ một tay lên trời, rồi xoay lại khi hạ tay.
-     * Gọi trên luồng render. Tay hạ xuống khoảng 3,1s; mặc định xoay lại lúc 3,0s để mượt.
+     * Khoe cape ("anh hùng ra mắt", ~5,4s): xoay lưng, bật cao giơ tay lên trời và xoay 360° trên không,
+     * tiếp đất, tạo dáng, màn kết giật cape rồi bung tung, rồi quay lại. Gọi trên luồng render.
+     * Tay hạ xong khoảng 5,2s; mặc định xoay lại lúc 4,9s để mượt.
      */
     private fun showOffCape(holdMillis: Long) {
-        handler.removeCallbacks(recenterAfterShowOff)
+        cancelShowOffCallbacks()
         val current = PetLibNative.nativeGetYaw(ptr)
         // Quay về phía gần nhất cho tới khi quay lưng (default + π)
         val next = current + wrapPi(defaultYaw + Math.PI.toFloat() - current)
         yawTarget = next
         PetLibNative.nativeSetYaw(ptr, next)
         PetLibNative.nativePlayCapePose(ptr)
-        handler.postDelayed(recenterAfterShowOff, holdMillis)
+        leapSpinSteps.forEachIndexed { i, step -> handler.postDelayed(step, 780L + i * 125L) }
+        // Màn kết xong ~4,6s; quay lại lúc holdMillis (tối thiểu 4,3s)
+        handler.postDelayed(recenterAfterShowOff, maxOf(holdMillis, 4300L))
     }
 
     /**
@@ -226,10 +244,10 @@ class PetController(
         post { PetLibNative.nativeSetHeadRange(ptr, x, y) }
     }
 
-    /** 设置压扁动画深度百分比 */
-    fun setSquashDepth(@FloatRange(.0, 30.0) depth: Float) {
-        post { PetLibNative.nativeSetSquashDepth(ptr, depth) }
-    }
+    /** Đã bỏ hiệu ứng nhún khi chạm; giữ lại để mã gọi cũ vẫn biên dịch được, không còn tác dụng. */
+    @Deprecated("Hiệu ứng nhún đã bị loại bỏ; hàm này không làm gì.")
+    @Suppress("UNUSED_PARAMETER")
+    fun setSquashDepth(@FloatRange(.0, 30.0) depth: Float) = Unit
 
     /**
      * Phóng to nhân vật quanh tâm khung hình.
@@ -243,16 +261,15 @@ class PetController(
     private var still = false
 
     /**
-     * Chế độ đứng yên (dùng cho màn hình Skin): nhân vật giữ tư thế nghỉ, không idle, không emote,
-     * không phản ứng chạm/vuốt/đánh. Chỉ riêng hành động khoe cape khi [setCape] (showOff = true) vẫn chạy.
-     * Tắt chế độ này sẽ phát lại idle.
+     * Chế độ đứng yên (dùng cho màn hình Skin): đầu không bám theo con trỏ.
+     * Nhân vật vốn luôn đứng yên ở tư thế nghỉ; hành động khoe cape khi [setCape] (showOff = true) vẫn chạy.
+     * Tắt chế độ này để đầu bám theo con trỏ trở lại.
      */
     fun setStill(enabled: Boolean) {
         still = enabled
         post {
-            handler.removeCallbacks(recenterAfterShowOff)
+            cancelShowOffCallbacks()
             if (enabled) {
-                PetLibNative.nativeCancelEmote(ptr)
                 PetLibNative.nativeStopAnimation(ptr)
             } else {
                 PetLibNative.nativePlayAnimation(ptr, PetAnimation.Idle.id, 1f, true)
@@ -305,57 +322,41 @@ class PetController(
     }
 
     /**
-     * 播放循环动画
-     * @param animation 动画预设
-     * @param speed 播放速度倍率
-     * @param headFollow 播放期间头部是否追随注视输入
+     * Idle/đi bộ đã bị loại bỏ: nhân vật luôn đứng yên ở tư thế nghỉ.
+     * Hàm này chỉ còn quyết định [headFollow] (đầu có bám theo con trỏ hay không); [animation] và [speed] bị bỏ qua.
      */
     fun playAnimation(animation: PetAnimation, speed: Float = 1f, headFollow: Boolean = true) {
         if (still) return
         post { PetLibNative.nativePlayAnimation(ptr, animation.id, speed, headFollow) }
     }
 
-    /** 停止动画 */
+    /** Tắt việc đầu bám theo con trỏ (không cắt hành động khoe cape đang chạy). */
     fun stopAnimation() {
         post { PetLibNative.nativeStopAnimation(ptr) }
     }
 
-    /**
-     * 播放点按压扁动画
-     * @param now 兼容保留；内部按帧间隔计时，不读取该值
-     */
-    fun squashTap(now: Float) {
-        if (still) return
-        post { PetLibNative.nativeSquashTap(ptr, now) }
-    }
+    /** Đã bỏ hiệu ứng nhún khi chạm; giữ lại để mã gọi cũ biên dịch được, không còn tác dụng. */
+    @Deprecated("Hiệu ứng nhún đã bị loại bỏ; hàm này không làm gì.")
+    @Suppress("UNUSED_PARAMETER")
+    fun squashTap(now: Float) = Unit
 
-    /**
-     * 播放攻击摆臂动画
-     * @param now 兼容保留；内部按帧间隔计时，不读取该值
-     */
-    fun playSwing(now: Float) {
-        if (still) return
-        post { PetLibNative.nativePlaySwing(ptr, now) }
-    }
+    /** Đã bỏ hiệu ứng vung tay; giữ lại để mã gọi cũ biên dịch được, không còn tác dụng. */
+    @Deprecated("Hiệu ứng vung tay đã bị loại bỏ; hàm này không làm gì.")
+    @Suppress("UNUSED_PARAMETER")
+    fun playSwing(now: Float) = Unit
 
-    /** Phát một emote; đang phát emote khác thì chuyển mượt sang emote mới. */
-    fun playEmote(emote: PetEmote) {
-        if (still) return
-        post { PetLibNative.nativePlayEmote(ptr, emote.id) }
-    }
+    /** Đã bỏ emote; giữ lại để mã gọi cũ biên dịch được, không còn tác dụng. */
+    @Deprecated("Emote đã bị loại bỏ; hàm này không làm gì.")
+    @Suppress("UNUSED_PARAMETER")
+    fun playEmote(emote: PetEmote) = Unit
 
-    /** Huỷ emote đang phát, fade về animation nền. */
-    fun cancelEmote() {
-        post { PetLibNative.nativeCancelEmote(ptr) }
-    }
+    /** Đã bỏ emote; giữ lại để mã gọi cũ biên dịch được, không còn tác dụng. */
+    @Deprecated("Emote đã bị loại bỏ; hàm này không làm gì.")
+    fun cancelEmote() = Unit
 
-    /**
-     * 播放点击反应动画，播放中重复调用时无效果
-     */
-    fun playInteract() {
-        if (still) return
-        post { PetLibNative.nativePlayInteract(ptr) }
-    }
+    /** Đã bỏ phản ứng chạm; giữ lại để mã gọi cũ biên dịch được, không còn tác dụng. */
+    @Deprecated("Phản ứng chạm đã bị loại bỏ; hàm này không làm gì.")
+    fun playInteract() = Unit
 
     /**
      * 归一化坐标命中测试，结果异步回到调用方的回调
@@ -406,7 +407,7 @@ class PetController(
     override fun close() {
         if (released) return
         released = true
-        handler.removeCallbacks(recenterAfterShowOff)
+        cancelShowOffCallbacks()
 
         mainHandler.post {
             frameCallback?.let { Choreographer.getInstance().removeFrameCallback(it) }

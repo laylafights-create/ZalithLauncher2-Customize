@@ -1,6 +1,9 @@
 package com.movtery.petlib
 
-/** Emote phát theo yêu cầu (như bánh xe emote). [id] trùng chỉ số trong pool Rust. */
+/**
+ * Emote đã bị loại bỏ; enum chỉ còn để mã gọi cũ biên dịch được (xem [PetController.playEmote], không làm gì).
+ */
+@Deprecated("Emote đã bị loại bỏ.")
 enum class PetEmote(internal val id: Int) {
     Fidget1(0), Fidget2(1), Fidget3(2),
     Jump(3), Spin(4), Wave(5), Stomp(6), Dance(7),

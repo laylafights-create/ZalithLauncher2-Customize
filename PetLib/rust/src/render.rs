@@ -1006,7 +1006,7 @@ mod tests {
             TEST_THREADS.store(threads, Ordering::Relaxed);
             let mut model =
                 crate::api::PetModel::new(&skin_png(), None).expect("model");
-            model.play_animation(crate::animation::AnimationId::Walking, 1., true);
+            model.play_cape_pose();
             let (w, h) = (150usize, 170usize);
             let mut out = vec![0u8; w * h * 4];
             for i in 0..40 {

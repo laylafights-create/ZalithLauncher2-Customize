@@ -1,48 +1,39 @@
-# Nâng cấp animation (hướng tới độ chỉn chu kiểu Essential)
+# Animation: chỉ còn hiệu ứng khoe cape
 
-## Walking (rust/src/animation.rs)
-- Nhấc chân (leg_lift): chân vung tới được nhấc lên rồi đặt xuống dứt khoát; chỉ một chân nhấc tại một thời điểm.
-- Thân nghiêng nhẹ về trước, nghiêng ngang theo chân chống, đầu gật nhẹ theo mỗi bước, tay thêm hài bậc hai.
-- Giữ nguyên các tần số cũ nên WALKING_PERIOD vẫn đúng. Thêm 2 test mới.
+Đã loại bỏ toàn bộ hiệu ứng hành động. Nhân vật luôn đứng yên ở tư thế nghỉ; chuyển động duy nhất là **khoe cape**.
 
-## Chuyển cảnh (rust/src/pose.rs)
-- Trọng số crossfade dùng smootherstep thay smoothstep: bắt đầu/kết thúc êm hơn, tổng trọng số vẫn = 1.
-- snapshot_from_frame nhận leg_lift vào trục y của chân.
+## Đã loại bỏ
+- Idle (thở, chuyển trọng tâm, liếc nhìn) và lịch emote ngẫu nhiên mỗi 8s.
+- Dáng đi (walking) và `evaluate_walking`.
+- Toàn bộ emote (3 fidget gốc, Jump, Spin, Wave, Stomp, Dance, Peek, Headbang, Kick, Stretch, Taunt, Clap, Bow, Shrug, Think).
+- Phản ứng chạm (`playInteract`), nhún khi chạm (`squashTap`), vung tay (`playSwing`).
+- Dữ liệu keyframe gốc (CLIP_IDLE/SUB/INTERACT), `tools/gen_clip_data.py`, `tools/models/*.gltf` và test `clip_parity.rs` (chỉ phục vụ các clip trên).
+- JNI: `nativePlayEmote`, `nativeCancelEmote`, `nativePlayInteract`, `nativeSquashTap`, `nativePlaySwing`, `nativeSetSquashDepth`.
 
-## Idle (tools/gen_fun_clips.py)
-- Chu kỳ 8s, 3 lớp: thở (hít nhanh/thở ra chậm, ngực nâng, tay trễ theo thân), chuyển trọng tâm (hông lệch,
-  thân nghiêng ngược, chân chống/chân thả lỏng), liếc nhìn hai lần + một lần thở dài. Lặp liền mạch (đã kiểm chứng).
+## Còn giữ
+- Khoe cape (`CAPE_POSE`, 3.65s) khi `setCape(...)` với `showOff = true`; sinh bởi `tools/gen_fun_clips.py`.
+- Đầu bám theo con trỏ (gaze), kéo để xoay (`rotateYaw`), zoom, ánh sáng, skin/cape.
 
-## Emote mới
-Clap(13), Bow(14), Shrug(15), Think(16) -> thêm vào ALL_SUBS (cũng nằm trong pool ngẫu nhiên) và PetEmote.kt.
+## Tương thích API (Kotlin)
+`playEmote`, `cancelEmote`, `playInteract`, `squashTap`, `playSwing`, `setSquashDepth`, `PetEmote`, `PetTapReaction` vẫn còn nhưng là
+no-op / `@Deprecated` để mã gọi cũ không phải sửa. `playAnimation(...)` chỉ còn quyết định `headFollow`; `stopAnimation()`/`setStill(true)`
+tắt việc đầu bám con trỏ nhưng không cắt hiệu ứng khoe cape.
 
 ## Cách dùng
-Sau khi sửa tools/gen_fun_clips.py: `python3 tools/gen_fun_clips.py` để sinh lại rust/src/clip_fun.rs.
-Chạy `cargo test` trong PetLib/rust để xác nhận.
+Sau khi sửa `tools/gen_fun_clips.py`: `python3 tools/gen_fun_clips.py` để sinh lại `rust/src/clip_fun.rs`.
+Chạy `cargo test` trong `PetLib/rust` để xác nhận.
 
-## Hiệu ứng khoe cape (CAPE_POSE)
-Viết lại thành kịch bản "anh hùng ra mắt" 3.65s: dồn lực -> bật người, tay phải vút lên trời (overshoot) -> tiếp đất nhún mạnh
--> tạo dáng chân dạng rộng, tay trái chống hông, cape phần phật -> hạ tay chậm. Thời lượng giữ nguyên nên code gọi không đổi.
-
-## Idle v2 (sửa lỗi "cứng ngắc" khi đứng chờ)
-Từ video: khoảng 5/7 giây giữa hai emote nhân vật gần như đứng im (biên độ idle cũ chỉ 1-2 độ).
-Idle mới biên độ lớn hơn nhiều (đầu xoay ~40°, thân xoay ~17°, tay ~25°) và có sự kiện nhỏ gần như mỗi 1-1.5s:
-liếc phải, chỉnh tay phải, nghiêng đầu tò mò, liếc xuống-trái, chỉnh tay trái, thở dài. Vẫn lặp 8s liền mạch.
+## Hiệu ứng khoe cape (CAPE_POSE) — v2 "anh hùng ra mắt" 5.4s
+6 màn: dồn lực (cape bị ép sát) -> bật CAO (lơ lửng ~0.65s, đỉnh 7.5px, co chân) giơ tay lên trời và xoay 360° trên không (4 bước 90°), cape tung xoáy -> tiếp đất nhún cực mạnh, cape phồng như dù
+-> tạo dáng (chân dạng, tay chống hông, thân quét trái-phải, cape cuộn sóng) -> màn kết "giật cape" (hai tay gom cape chéo trước ngực, cúi gập, rồi bung: dang tay, ngửa người, nhảy lên, cape bùng tung xoè rộng) -> thu về (cúi chào nhẹ, cape lắng).
+- Cape có thêm trục **roll** (hất sang hai bên, `cape_quat(sway, roll)`) bên cạnh sway trước/sau; lò xo cape nảy hơn (zeta 0.32).
+- Thời lượng clip 5.4s (+0.5s đuôi). `showOffMillis` mặc định đổi 3000 -> 4900ms; vòng xoay trên không lúc bật cao do `PetController.showOffCape` đặt yaw theo 4 bước 90°.
 
 ## Màn hình Skin: đứng yên + phóng to
-- `PetController.setStill(true)`: nhân vật giữ tư thế nghỉ, không idle/emote/chạm/vuốt/đánh. Hành động khoe cape khi `setCape(...)` vẫn chạy rồi về tư thế nghỉ.
-  `setStill(false)` phát lại idle (dùng khi rời màn hình Skin).
+- `PetController.setStill(true)`: nhân vật giữ tư thế nghỉ, đầu không bám con trỏ. Hành động khoe cape khi `setCape(...)` vẫn chạy rồi về tư thế nghỉ.
+  `setStill(false)` cho đầu bám con trỏ trở lại (dùng khi rời màn hình Skin).
 - `PetController.setZoom(1.5f)`: phóng to quanh tâm khung (0.25..4, 1 = mặc định). Rust: `PetModel::set_zoom`, JNI `nativeSetZoom`.
 - Ví dụ ở màn hình Skin:
     controller.setStill(true)
     controller.setZoom(1.5f)
     controller.setCape(capeBytes)   // vẫn khoe cape như cũ
-
-## Làm mềm toàn bộ emote/hành động (bớt cứng)
-1. **Nội suy Catmull-Rom** (rust/src/clip.rs) thay cho slerp/lerp tuyến tính giữa các key 30fps: vận tốc liên tục tại mọi key.
-   Áp dụng cho MỌI clip, kể cả 3 fidget gốc và clip phản ứng khi chạm. Clip tuần hoàn quấn vòng để không gãy ở mối nối.
-2. **Bộ lọc lò xo từng khớp** (tools/gen_fun_clips.py, `SPRING`): quán tính + overshoot + lắng lại (follow-through);
-   đầu/tay/cape "nảy" hơn, thân/chân chắc hơn. LAG giảm vì lò xo đã tạo độ trễ.
-3. **Chuyển động vi mô** trong mọi emote (thở, đầu trôi nhẹ, cape lay) -> đoạn giữ tư thế không còn đơ.
-4. TAIL 0.25s -> 0.5s để lò xo lắng hẳn trước khi nối sang idle (emote dài hơn ~0.25s).
-5. Sửa các test phụ thuộc thời lượng cố định (theo thời lượng emote thực tế).
