@@ -122,13 +122,35 @@ private fun requireClientId() {
 /**
  * 把只有状态码的 HTTP 异常，转换成带有服务端真实错误信息的异常，并写入日志
  */
+private fun sanitizeAuthDiagnostic(value: String): String {
+    // Never write credentials or bearer material to the launcher log.
+    return value
+        .replace(
+            Regex("""(?i)("?(?:access_token|refresh_token|id_token|device_code|user_code|identityToken|authorization|rpsTicket)"?\s*[:=]\s*")[^"]*(")"""),
+            "${'$'}1[REDACTED]${'$'}2"
+        )
+        .replace(Regex("""(?i)Bearer\s+[A-Za-z0-9._~+/-]+=*"""), "Bearer [REDACTED]")
+        .replace(Regex("""\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9._-]+\b"""), "[REDACTED_JWT]")
+        .take(1200)
+}
+
 private suspend fun ResponseException.withBody(step: String): Exception {
-    val body = runCatching { response.safeBodyAsText() }.getOrNull().orEmpty().take(500)
-    Logger.error(TAG, "$step failed: HTTP ${response.status.value}, body = $body", this)
+    val rawBody = runCatching { response.safeBodyAsText() }.getOrNull().orEmpty()
+    val body = sanitizeAuthDiagnostic(rawBody)
+    Logger.error(TAG, "$step failed: HTTP ${response.status.value}, response = $body", this)
     val detail = runCatching {
         GLOBAL_JSON.decodeFromString<JsonObject>(body)["error_description"]?.jsonPrimitive?.content
-    }.getOrNull() ?: body
+    }.getOrNull() ?: body.ifBlank { "No response body" }
     return Exception("($step) HTTP ${response.status.value}: $detail".trim(), this)
+}
+
+private fun isExplicitIpBlockResponse(body: String): Boolean {
+    // A generic HTTP 403 is not proof of an IP block. Require explicit server wording.
+    val text = body.lowercase()
+    val ipTerms = "(?:ip address|source ip|client ip|ip-address|ip_address)"
+    val blockTerms = "(?:block(?:ed)?|ban(?:ned)?|deny|denied|restrict(?:ed|ion)?)"
+    return Regex("$ipTerms.{0,100}$blockTerms|$blockTerms.{0,100}$ipTerms", RegexOption.IGNORE_CASE)
+        .containsMatchIn(text)
 }
 
 /**
@@ -287,14 +309,21 @@ suspend fun microsoftAuthAsync(
         else -> Pair(accessToken, refreshToken)
     }
 
-    Logger.debug(TAG, "Authenticating with Xbox Live (XBL)")
+    Logger.info(TAG, "Microsoft login stage: Xbox Live authentication started")
     val xblToken = authenticateXBL(finalAccessToken, statusUpdate)
-    Logger.debug(TAG, "Authenticating with Xbox Secure Token Service (XSTS)")
+    Logger.info(TAG, "Microsoft login stage: Xbox Live authentication succeeded")
+
+    Logger.info(TAG, "Microsoft login stage: XSTS authentication started")
     val xstsToken = authenticateXSTS(xblToken.first, xblToken.second, statusUpdate, context)
-    Logger.debug(TAG, "Authenticating with Minecraft services")
+    Logger.info(TAG, "Microsoft login stage: XSTS authentication succeeded")
+
+    Logger.info(TAG, "Microsoft login stage: Minecraft Services login started")
     val authResponse = authenticateMinecraft(xstsToken, statusUpdate, context)
-    Logger.debug(TAG, "Verifying Minecraft ownership")
+    Logger.info(TAG, "Microsoft login stage: Minecraft Services login succeeded")
+
+    Logger.info(TAG, "Microsoft login stage: game ownership check started")
     verifyGameOwnership(authResponse.accessToken, statusUpdate)
+    Logger.info(TAG, "Microsoft login stage: game ownership check succeeded")
 
     return@coroutineScope createAccount(authResponse, newRefreshToken, xblToken.second, statusUpdate)
 }
@@ -420,7 +449,8 @@ private suspend fun authenticateXSTS(
         } catch (e: ClientRequestException) {
             // XSTS 对账号类问题统一返回 4xx 及 XErr 错误码，expectSuccess 会提前抛出异常
             // 因此必须从异常响应体中解析 XErr，才能向用户展示真实的失败原因
-            val errorBody = runCatching { e.response.safeBodyAsJson<JsonObject>() }.getOrNull()
+            val rawBody = runCatching { e.response.safeBodyAsText() }.getOrNull().orEmpty()
+            val errorBody = runCatching { GLOBAL_JSON.decodeFromString<JsonObject>(rawBody) }.getOrNull()
             when (val xErr = errorBody?.get("XErr").text()) {
                 //Reference : https://github.com/PrismarineJS/prismarine-auth/blob/1aef6e1/src/common/Constants.js#L50-L59
                 "2148916227" -> throw XboxLoginException(BANNED)
@@ -432,9 +462,11 @@ private suspend fun authenticateXSTS(
                 "2148916237" -> throw XboxLoginException(REACHED_PLAYTIME_LIMIT)
                 "2148916238" -> throw XboxLoginException(UNDERAGE)
                 else -> {
+                    val rawBody = runCatching { e.response.safeBodyAsText() }.getOrNull().orEmpty()
                     Logger.error(
                         TAG,
-                        "XSTS authentication failed: status = ${e.response.status}, XErr = $xErr, message = ${errorBody?.get("Message").text()}"
+                        "XSTS authentication failed: HTTP ${e.response.status.value}, XErr = $xErr, response = ${sanitizeAuthDiagnostic(rawBody)}",
+                        e
                     )
                     throw e
                 }
@@ -460,9 +492,35 @@ private suspend fun authenticateMinecraft(
         }.onFailure { e ->
             if (e is ResponseException) {
                 when (e.response.status.value) {
-                    429 -> throw MinecraftProfileException(FREQUENT)
-                    403 -> throw MinecraftProfileException(BLOCKED_IP)
+                    429 -> {
+                        val body = runCatching { e.response.safeBodyAsText() }.getOrNull().orEmpty()
+                        Logger.warning(TAG, "Minecraft Services rate limited login (HTTP 429): ${sanitizeAuthDiagnostic(body)}")
+                        throw MinecraftProfileException(FREQUENT)
+                    }
+                    403 -> {
+                        val body = runCatching { e.response.safeBodyAsText() }.getOrNull().orEmpty()
+                        val safeBody = sanitizeAuthDiagnostic(body)
+                        Logger.error(TAG, "Minecraft Services rejected login (HTTP 403): $safeBody", e)
+                        if (isExplicitIpBlockResponse(body)) {
+                            throw MinecraftProfileException(BLOCKED_IP)
+                        }
+                        // Keep the actual HTTP error visible; do not mislabel every 403 as an IP ban.
+                        throw IllegalStateException(
+                            "Minecraft Services từ chối đăng nhập (HTTP 403). Phản hồi chưa xác nhận đây là chặn IP. Xem log MicrosoftAuth để biết chi tiết.",
+                            e
+                        )
+                    }
+                    else -> {
+                        val body = runCatching { e.response.safeBodyAsText() }.getOrNull().orEmpty()
+                        Logger.error(
+                            TAG,
+                            "Minecraft Services login failed: HTTP ${e.response.status.value}, response = ${sanitizeAuthDiagnostic(body)}",
+                            e
+                        )
+                    }
                 }
+            } else {
+                Logger.error(TAG, "Minecraft Services login failed: ${e::class.simpleName}: ${e.message}", e)
             }
         }.getOrThrow()
     }
