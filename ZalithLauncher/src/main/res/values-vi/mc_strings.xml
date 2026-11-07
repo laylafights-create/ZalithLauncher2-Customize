@@ -8,4 +8,16 @@
     <string name="mc_tab_installations">Bản cài đặt</string>
     <string name="mc_tab_skins">Skin</string>
     <string name="mc_tab_patch_notes">Ghi chú bản vá</string>
+    <string name="mc_picker_title">Chọn phiên bản</string>
+    <string name="mc_picker_installed">Đã cài</string>
+    <string name="mc_picker_all_versions">Tất cả phiên bản</string>
+    <string name="mc_picker_release">Chính thức</string>
+    <string name="mc_picker_snapshot">Snapshot</string>
+    <string name="mc_picker_old">Cũ</string>
+    <string name="mc_picker_april_fools">Cá tháng Tư</string>
+    <string name="mc_picker_search">Tìm phiên bản…</string>
+    <string name="mc_picker_loading">Đang tải danh sách phiên bản…</string>
+    <string name="mc_picker_load_failed">Không tải được danh sách phiên bản. Kiểm tra kết nối mạng.</string>
+    <string name="mc_picker_state_installed">Đã cài</string>
+    <string name="mc_picker_state_download">Tải về</string>
 </resources>

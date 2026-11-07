@@ -19,6 +19,18 @@
 package com.movtery.zalithlauncher.ui.screens.content
 
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import com.movtery.zalithlauncher.game.versioninfo.MinecraftVersion
+import com.movtery.zalithlauncher.game.versioninfo.MinecraftVersions
+import com.movtery.zalithlauncher.game.versioninfo.models.isType
+import com.movtery.zalithlauncher.ui.components.McPanel
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.platform.LocalContext
 import com.movtery.petlib.PetAnimation
@@ -127,7 +139,19 @@ fun LauncherScreen(
                 onLaunchGame = onLaunchGame,
                 onOpenVersionSettings = navigateToVersions,
                 toVersionManageScreen = toVersionManageScreen,
-                toAccountManageScreen = toAccountManageScreen
+                toAccountManageScreen = toAccountManageScreen,
+                onInstallVersion = { mc ->
+                    backStackViewModel.navigateToDownload(
+                        targetScreen = backStackViewModel.downloadGameScreen.apply {
+                            navigateTo(
+                                NormalNavKey.DownloadGame.Addons(
+                                    gameVersion = mc.version.id,
+                                    type = mc.type
+                                )
+                            )
+                        }
+                    )
+                }
             )
         }
     }
@@ -194,7 +218,8 @@ private fun PlayBar(
     onLaunchGame: (Version?) -> Unit,
     onOpenVersionSettings: (Version) -> Unit,
     toVersionManageScreen: () -> Unit,
-    toAccountManageScreen: () -> Unit
+    toAccountManageScreen: () -> Unit,
+    onInstallVersion: (MinecraftVersion) -> Unit
 ) {
     val version by VersionsManager.currentVersion.collectAsStateWithLifecycle()
     val isRefreshing by VersionsManager.isRefreshing.collectAsStateWithLifecycle()
@@ -222,7 +247,8 @@ private fun PlayBar(
                     VersionSelector(
                         modifier = Modifier.weight(1f),
                         version = version,
-                        toVersionManageScreen = toVersionManageScreen
+                        toVersionManageScreen = toVersionManageScreen,
+                        onInstallVersion = onInstallVersion
                     )
                     version?.takeIf { !isRefreshing && it.isValid() }?.let { current ->
                         IconButton(onClick = { onOpenVersionSettings(current) }) {
@@ -265,9 +291,10 @@ private fun PlayBar(
 private fun VersionSelector(
     version: Version?,
     toVersionManageScreen: () -> Unit,
+    onInstallVersion: (MinecraftVersion) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var showList by remember { mutableStateOf(false) }
+    var showPicker by remember { mutableStateOf(false) }
 
     Box(modifier = modifier) {
         Row(
@@ -275,7 +302,7 @@ private fun VersionSelector(
                 .fillMaxWidth()
                 .border(1.dp, McColors.Outline)
                 .background(McColors.Panel)
-                .clickable { showList = true }
+                .clickable { showPicker = true }
                 .padding(horizontal = 10.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -302,38 +329,277 @@ private fun VersionSelector(
                 tint = McColors.TextSecondary
             )
         }
+    }
 
-        DropdownMenu(
-            expanded = showList,
-            onDismissRequest = { showList = false },
-            modifier = Modifier.width(280.dp)
-        ) {
-            val versions by VersionsManager.versions.collectAsStateWithLifecycle()
-            versions.forEach { item ->
-                DropdownMenuItem(
-                    text = {
-                        CommonVersionInfoLayout(
-                            modifier = Modifier.fillMaxWidth(),
-                            version = item,
-                            iconSize = 28.dp
-                        )
-                    },
-                    onClick = {
-                        if (item != version) VersionsManager.saveVersion(item)
-                        showList = false
-                    }
-                )
-            }
-            if (versions.isNotEmpty()) HorizontalDivider(color = McColors.Divider)
-            DropdownMenuItem(
-                text = { Text(text = stringResource(R.string.page_title_version_list)) },
-                onClick = {
-                    showList = false
-                    toVersionManageScreen()
-                }
-            )
+    if (showPicker) {
+        VersionPickerDialog(
+            current = version,
+            onDismiss = { showPicker = false },
+            toVersionManageScreen = toVersionManageScreen,
+            onInstallVersion = onInstallVersion
+        )
+    }
+}
+
+/** Bộ lọc loại phiên bản trong danh sách "Tất cả phiên bản". */
+private enum class VersionTab(val labelRes: Int) {
+    Release(R.string.mc_picker_release),
+    Snapshot(R.string.mc_picker_snapshot),
+    Old(R.string.mc_picker_old),
+    AprilFools(R.string.mc_picker_april_fools)
+}
+
+/**
+ * Hộp thoại chọn phiên bản kiểu TLauncher:
+ *  - phần trên: các phiên bản đã cài (chạm để chọn chơi)
+ *  - phần dưới: tất cả phiên bản Minecraft (lọc theo loại + tìm kiếm);
+ *    bản chưa cài chạm vào sẽ mở màn hình cài đặt đúng phiên bản đó.
+ */
+@Composable
+private fun VersionPickerDialog(
+    current: Version?,
+    onDismiss: () -> Unit,
+    toVersionManageScreen: () -> Unit,
+    onInstallVersion: (MinecraftVersion) -> Unit
+) {
+    val installed by VersionsManager.versions.collectAsStateWithLifecycle()
+    val allVersions by MinecraftVersions.allVersions.collectAsStateWithLifecycle()
+    var loadFailed by remember { mutableStateOf(false) }
+    var loading by remember { mutableStateOf(false) }
+    var tab by remember { mutableStateOf(VersionTab.Release) }
+    var query by remember { mutableStateOf("") }
+
+    // Tải danh sách phiên bản chính thức (có cache 1 ngày trong MinecraftVersions)
+    LaunchedEffect(Unit) {
+        if (allVersions.isEmpty()) {
+            loading = true
+            loadFailed = runCatching { MinecraftVersions.refreshVersions(force = false) }.isFailure
+            loading = false
         }
     }
+
+    // Tập tên bản Minecraft đã cài, để đánh dấu "Đã cài"
+    val installedIds = remember(installed) {
+        installed.flatMap { listOfNotNull(it.getVersionName(), it.getVersionInfo()?.minecraftVersion) }.toSet()
+    }
+
+    val filtered = remember(allVersions, tab, query) {
+        allVersions.filter { mc ->
+            val okType = when (tab) {
+                VersionTab.Release -> mc.isType(release = true, snapshot = false, aprilFools = false, old = false)
+                VersionTab.Snapshot -> mc.isType(release = false, snapshot = true, aprilFools = false, old = false)
+                VersionTab.Old -> mc.isType(release = false, snapshot = false, aprilFools = false, old = true)
+                VersionTab.AprilFools -> mc.isType(release = false, snapshot = false, aprilFools = true, old = false)
+            }
+            okType && (query.isBlank() || mc.version.id.contains(query.trim(), ignoreCase = true))
+        }
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        McPanel(
+            modifier = Modifier
+                .widthIn(max = 460.dp)
+                .fillMaxWidth(0.92f)
+                .heightIn(max = 520.dp),
+            color = McColors.Content
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                // Tiêu đề
+                Text(
+                    text = stringResource(R.string.mc_picker_title),
+                    color = McColors.TextPrimary,
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(start = 16.dp, top = 14.dp, end = 16.dp, bottom = 8.dp)
+                )
+                HorizontalDivider(color = McColors.Outline, thickness = 2.dp)
+
+                LazyColumn(modifier = Modifier.weight(1f, fill = false)) {
+                    // ---- Đã cài ----
+                    item {
+                        PickerHeader(stringResource(R.string.mc_picker_installed))
+                    }
+                    if (installed.isEmpty()) {
+                        item {
+                            Text(
+                                text = stringResource(R.string.game_launch_no_version),
+                                color = McColors.TextMuted,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                            )
+                        }
+                    }
+                    items(installed, key = { "i:" + it.getVersionName() }) { item ->
+                        val selected = item == current
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(if (selected) McColors.PanelHigh else Color.Transparent)
+                                .clickable {
+                                    if (!selected) VersionsManager.saveVersion(item)
+                                    onDismiss()
+                                }
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CommonVersionInfoLayout(
+                                modifier = Modifier.weight(1f),
+                                version = item,
+                                iconSize = 28.dp
+                            )
+                            if (selected) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_check),
+                                    contentDescription = null,
+                                    tint = McColors.PlayGreenLight,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
+                    item {
+                        Text(
+                            text = stringResource(R.string.page_title_version_list),
+                            color = McColors.PlayGreenLight,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    onDismiss()
+                                    toVersionManageScreen()
+                                }
+                                .padding(horizontal = 16.dp, vertical = 10.dp)
+                        )
+                        HorizontalDivider(color = McColors.Divider)
+                    }
+
+                    // ---- Tất cả phiên bản ----
+                    item {
+                        PickerHeader(stringResource(R.string.mc_picker_all_versions))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            VersionTab.entries.forEach { t ->
+                                val sel = t == tab
+                                Text(
+                                    text = stringResource(t.labelRes),
+                                    color = if (sel) Color.White else McColors.TextSecondary,
+                                    fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    maxLines = 1,
+                                    modifier = Modifier
+                                        .background(if (sel) McColors.PlayGreen else McColors.Panel)
+                                        .border(1.dp, if (sel) McColors.PlayGreenLight else McColors.Outline)
+                                        .clickable { tab = t }
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                )
+                            }
+                        }
+                        BasicTextField(
+                            value = query,
+                            onValueChange = { query = it },
+                            singleLine = true,
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(color = McColors.TextPrimary),
+                            cursorBrush = SolidColor(McColors.PlayGreenLight),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                                .background(McColors.Panel)
+                                .border(1.dp, McColors.Outline)
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                            decorationBox = { inner ->
+                                Box {
+                                    if (query.isEmpty()) {
+                                        Text(
+                                            text = stringResource(R.string.mc_picker_search),
+                                            color = McColors.TextMuted,
+                                            style = MaterialTheme.typography.bodyMedium
+                                        )
+                                    }
+                                    inner()
+                                }
+                            }
+                        )
+                    }
+
+                    when {
+                        loading && allVersions.isEmpty() -> item {
+                            Text(
+                                text = stringResource(R.string.mc_picker_loading),
+                                color = McColors.TextMuted,
+                                modifier = Modifier.padding(16.dp)
+                            )
+                        }
+                        loadFailed && allVersions.isEmpty() -> item {
+                            Text(
+                                text = stringResource(R.string.mc_picker_load_failed),
+                                color = McColors.Error,
+                                modifier = Modifier.padding(16.dp)
+                            )
+                        }
+                        else -> items(filtered, key = { "a:" + it.version.id }) { mc ->
+                            val isInstalled = mc.version.id in installedIds
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        onDismiss()
+                                        if (isInstalled) {
+                                            installed.firstOrNull {
+                                                it.getVersionName() == mc.version.id ||
+                                                        it.getVersionInfo()?.minecraftVersion == mc.version.id
+                                            }?.let { VersionsManager.saveVersion(it) }
+                                        } else {
+                                            onInstallVersion(mc)
+                                        }
+                                    }
+                                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = mc.version.id,
+                                    color = McColors.TextPrimary,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = stringResource(
+                                        if (isInstalled) R.string.mc_picker_state_installed
+                                        else R.string.mc_picker_state_download
+                                    ),
+                                    color = if (isInstalled) McColors.PlayGreenLight else McColors.TextMuted,
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PickerHeader(text: String) {
+    Text(
+        text = text.uppercase(),
+        color = McColors.TextMuted,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 1.sp,
+        style = MaterialTheme.typography.labelSmall,
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(McColors.Background)
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+    )
 }
 
 @Composable

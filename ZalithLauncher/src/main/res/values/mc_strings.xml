@@ -8,4 +8,16 @@
     <string name="mc_tab_installations">Installations</string>
     <string name="mc_tab_skins">Skins</string>
     <string name="mc_tab_patch_notes">Patch notes</string>
+    <string name="mc_picker_title">Select version</string>
+    <string name="mc_picker_installed">Installed</string>
+    <string name="mc_picker_all_versions">All versions</string>
+    <string name="mc_picker_release">Release</string>
+    <string name="mc_picker_snapshot">Snapshot</string>
+    <string name="mc_picker_old">Old</string>
+    <string name="mc_picker_april_fools">April Fools</string>
+    <string name="mc_picker_search">Search version…</string>
+    <string name="mc_picker_loading">Loading versions…</string>
+    <string name="mc_picker_load_failed">Could not load the version list. Check your connection.</string>
+    <string name="mc_picker_state_installed">Installed</string>
+    <string name="mc_picker_state_download">Download</string>
 </resources>

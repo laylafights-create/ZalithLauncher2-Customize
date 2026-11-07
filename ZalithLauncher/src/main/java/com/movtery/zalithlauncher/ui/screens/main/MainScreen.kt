@@ -180,6 +180,8 @@ fun MainScreen(
     val inPatchNotes = webUrl == PATCH_NOTES_URL
     val inNews = webUrl != null && !inPatchNotes
     val inSettings = mainScreenKey is NestedNavKey.Settings
+    val inDownload = mainScreenKey is NestedNavKey.Download
+    val inMultiplayer = mainScreenKey is NormalNavKey.Multiplayer
     // Các trang thuộc mục "Java Edition" có header + tab Play / Installations / Skins / Patch notes
     val inJavaSection = inLauncherScreen || inVersions || inAccounts || inPatchNotes
 
@@ -197,6 +199,17 @@ fun MainScreen(
                 inNews = inNews,
                 inSettings = inSettings,
                 inAccounts = inAccounts,
+                inDownload = inDownload,
+                inMultiplayer = inMultiplayer,
+                toDownload = { screenBackStackModel.navigateToDownload() },
+                toMultiplayer = { navigateTop(NormalNavKey.Multiplayer) },
+                openFileManager = {
+                    eventViewModel.sendEvent(
+                        EventViewModel.Event.OpenFileManager(
+                            rootPath = PathManager.DIR_FILES_EXTERNAL.absolutePath
+                        )
+                    )
+                },
                 toAccountScreen = { navigateTop(NormalNavKey.AccountManager(FirstLoginMenu.NONE)) },
                 toNewsScreen = { navigateTop(NormalNavKey.WebScreen(NEWS_URL)) },
                 toJavaEdition = { if (!inLauncherScreen) toMainScreen() },
@@ -218,15 +231,6 @@ fun MainScreen(
                         toInstallations = { if (!inVersions) navigateTop(NormalNavKey.VersionsManager) },
                         toSkins = { if (!inAccounts) navigateTop(NormalNavKey.AccountManager(FirstLoginMenu.NONE)) },
                         toPatchNotes = { if (!inPatchNotes) navigateTop(NormalNavKey.WebScreen(PATCH_NOTES_URL)) },
-                        toDownload = { screenBackStackModel.navigateToDownload() },
-                        toMultiplayer = { navigateTop(NormalNavKey.Multiplayer) },
-                        openFileManager = {
-                            eventViewModel.sendEvent(
-                                EventViewModel.Event.OpenFileManager(
-                                    rootPath = PathManager.DIR_FILES_EXTERNAL.absolutePath
-                                )
-                            )
-                        },
                         changeExpandedState = { changeTasksExpandedState() }
                     )
                 } else {
@@ -291,6 +295,11 @@ private fun MinecraftSidebar(
     inNews: Boolean,
     inSettings: Boolean,
     inAccounts: Boolean,
+    inDownload: Boolean,
+    inMultiplayer: Boolean,
+    toDownload: () -> Unit,
+    toMultiplayer: () -> Unit,
+    openFileManager: () -> Unit,
     toAccountScreen: () -> Unit,
     toNewsScreen: () -> Unit,
     toJavaEdition: () -> Unit,
@@ -366,6 +375,29 @@ private fun MinecraftSidebar(
                 subtitle = stringResource(R.string.mc_sidebar_minecraft),
                 onClick = toJavaEdition
             )
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = 6.dp),
+                color = McColors.Outline,
+                thickness = 1.dp
+            )
+            McSideRow(
+                selected = inDownload,
+                painter = painterResource(R.drawable.ic_download_2_filled),
+                label = stringResource(R.string.generic_download),
+                onClick = toDownload
+            )
+            McSideRow(
+                selected = inMultiplayer,
+                painter = painterResource(R.drawable.ic_group_filled),
+                label = stringResource(R.string.terracotta),
+                onClick = toMultiplayer
+            )
+            McSideRow(
+                selected = false,
+                painter = painterResource(R.drawable.ic_folder_filled),
+                label = stringResource(R.string.files_browse_folder),
+                onClick = openFileManager
+            )
         }
 
         HorizontalDivider(color = McColors.Outline, thickness = 1.dp)
@@ -433,7 +465,7 @@ private fun McSideRow(
 
 /**
  * Header của mục Java Edition: dòng "MINECRAFT: JAVA EDITION" + tab Play / Installations / Skins / Patch notes,
- * kèm các nút phụ (Download, Multiplayer, Files, tiến trình tác vụ) ở bên phải.
+ * kèm chip tiến trình tác vụ ở bên phải (Download / Multiplayer / Files nằm ở thanh bên).
  */
 @Composable
 private fun McJavaHeader(
@@ -446,9 +478,6 @@ private fun McJavaHeader(
     toInstallations: () -> Unit,
     toSkins: () -> Unit,
     toPatchNotes: () -> Unit,
-    toDownload: () -> Unit,
-    toMultiplayer: () -> Unit,
-    openFileManager: () -> Unit,
     changeExpandedState: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -489,30 +518,6 @@ private fun McJavaHeader(
                         contentDescription = stringResource(R.string.main_task_menu)
                     )
                 }
-            }
-            IconButton(onClick = toDownload) {
-                Icon(
-                    modifier = Modifier.size(22.dp),
-                    painter = painterResource(R.drawable.ic_download_2_filled),
-                    tint = McColors.TextSecondary,
-                    contentDescription = stringResource(R.string.generic_download)
-                )
-            }
-            IconButton(onClick = toMultiplayer) {
-                Icon(
-                    modifier = Modifier.size(22.dp),
-                    painter = painterResource(R.drawable.ic_group_filled),
-                    tint = McColors.TextSecondary,
-                    contentDescription = stringResource(R.string.terracotta)
-                )
-            }
-            IconButton(onClick = openFileManager) {
-                Icon(
-                    modifier = Modifier.size(22.dp),
-                    painter = painterResource(R.drawable.ic_folder_filled),
-                    tint = McColors.TextSecondary,
-                    contentDescription = stringResource(R.string.files_browse_folder)
-                )
             }
         }
     }
