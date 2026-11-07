@@ -16,531 +16,488 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/gpl-3.0.txt>.
  */
 
-package com.movtery.zalithlauncher.game.account.microsoft
+package com.movtery.zalithlauncher.game.account
 
-import com.movtery.zalithlauncher.BuildKeys
-import com.movtery.zalithlauncher.game.account.Account
-import com.movtery.zalithlauncher.game.account.AccountType
-import com.movtery.zalithlauncher.game.account.AccountsManager
-import com.movtery.zalithlauncher.game.account.CredentialsExpiredException
-import com.movtery.zalithlauncher.game.account.microsoft.MinecraftProfileException.ExceptionStatus.BLOCKED_IP
-import com.movtery.zalithlauncher.game.account.microsoft.MinecraftProfileException.ExceptionStatus.FREQUENT
-import com.movtery.zalithlauncher.game.account.microsoft.XboxLoginException.ExceptionStatus.BANNED
-import com.movtery.zalithlauncher.game.account.microsoft.XboxLoginException.ExceptionStatus.BLOCKED_REGION
-import com.movtery.zalithlauncher.game.account.microsoft.XboxLoginException.ExceptionStatus.NOT_ACCEPTED_SERVICE
-import com.movtery.zalithlauncher.game.account.microsoft.XboxLoginException.ExceptionStatus.REACHED_PLAYTIME_LIMIT
-import com.movtery.zalithlauncher.game.account.microsoft.XboxLoginException.ExceptionStatus.REQUIRES_PROOF_OF_AGE
-import com.movtery.zalithlauncher.game.account.microsoft.XboxLoginException.ExceptionStatus.RESTRICTED
-import com.movtery.zalithlauncher.game.account.microsoft.XboxLoginException.ExceptionStatus.UNDERAGE
-import com.movtery.zalithlauncher.game.account.microsoft.XboxLoginException.ExceptionStatus.UNREGISTERED
-import com.movtery.zalithlauncher.game.account.microsoft.models.DeviceCodeResponse
-import com.movtery.zalithlauncher.game.account.microsoft.models.MinecraftAuthResponse
-import com.movtery.zalithlauncher.game.account.microsoft.models.TokenResponse
-import com.movtery.zalithlauncher.game.account.microsoft.models.XBLProperties
-import com.movtery.zalithlauncher.game.account.microsoft.models.XBLRequest
-import com.movtery.zalithlauncher.game.account.microsoft.models.XSTSAuthResult
-import com.movtery.zalithlauncher.game.account.microsoft.models.XSTSProperties
-import com.movtery.zalithlauncher.game.account.microsoft.models.XSTSRequest
-import com.movtery.zalithlauncher.game.account.wardrobe.SkinModelType
-import com.movtery.zalithlauncher.game.account.yggdrasil.findUsing
-import com.movtery.zalithlauncher.game.account.yggdrasil.getPlayerProfile
-import com.movtery.zalithlauncher.game.account.yggdrasil.getSkinModel
-import com.movtery.zalithlauncher.path.GLOBAL_CLIENT
-import com.movtery.zalithlauncher.path.GLOBAL_JSON
+import android.content.Context
+import android.widget.Toast
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
+import com.movtery.zalithlauncher.R
+import com.movtery.zalithlauncher.context.COPY_LABEL_DEVICE_CODE
+import com.movtery.zalithlauncher.coroutine.Task
+import com.movtery.zalithlauncher.coroutine.TaskSystem
+import com.movtery.zalithlauncher.game.account.auth_server.AuthServerHelper
+import com.movtery.zalithlauncher.game.account.auth_server.ResponseException
+import com.movtery.zalithlauncher.game.account.auth_server.data.AuthServer
+import com.movtery.zalithlauncher.game.account.auth_server.getAuthServeInfo
+import com.movtery.zalithlauncher.game.account.microsoft.AsyncStatus
+import com.movtery.zalithlauncher.game.account.microsoft.AuthType
+import com.movtery.zalithlauncher.game.account.microsoft.MinecraftProfileException
+import com.movtery.zalithlauncher.game.account.microsoft.NotPurchasedMinecraftException
+import com.movtery.zalithlauncher.game.account.microsoft.XboxLoginException
+import com.movtery.zalithlauncher.game.account.microsoft.fetchDeviceCodeResponse
+import com.movtery.zalithlauncher.game.account.microsoft.getTokenResponse
+import com.movtery.zalithlauncher.game.account.microsoft.microsoftAuthAsync
+import com.movtery.zalithlauncher.game.account.microsoft.toLocal
+import com.movtery.zalithlauncher.path.DOWNLOAD_OKHTTP_CLIENT
+import com.movtery.zalithlauncher.path.URL_USER_AGENT
+import com.movtery.zalithlauncher.ui.AndroidStringText
+import com.movtery.zalithlauncher.ui.androidText
+import com.movtery.zalithlauncher.ui.screens.content.elements.MicrosoftLoginOperation
+import com.movtery.zalithlauncher.utils.copyText
 import com.movtery.zalithlauncher.utils.logging.Logger
-import com.movtery.zalithlauncher.utils.network.httpPostJson
-import com.movtery.zalithlauncher.utils.network.safeBodyAsJson
-import com.movtery.zalithlauncher.utils.network.safeBodyAsText
-import com.movtery.zalithlauncher.utils.network.submitForm
-import com.movtery.zalithlauncher.utils.string.toUuidStr
-import io.ktor.client.plugins.ClientRequestException
+import com.movtery.zalithlauncher.utils.network.toLocal
+import com.movtery.zalithlauncher.viewmodel.ErrorViewModel
 import io.ktor.client.plugins.HttpRequestTimeoutException
-import io.ktor.client.plugins.ResponseException
-import io.ktor.client.plugins.ServerResponseException
-import io.ktor.client.plugins.expectSuccess
-import io.ktor.client.request.get
-import io.ktor.client.request.header
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
-import io.ktor.http.ContentType
-import io.ktor.http.HttpHeaders
-import io.ktor.http.Parameters
-import io.ktor.http.contentType
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.int
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
+import okhttp3.Request
+import okhttp3.Response
+import org.json.JSONObject
+import java.net.ConnectException
+import java.net.UnknownHostException
+import java.nio.channels.UnresolvedAddressException
+import java.util.Locale
+import java.util.Objects
+import java.util.UUID
 import kotlin.coroutines.CoroutineContext
-import kotlin.time.Duration.Companion.milliseconds
-import io.ktor.client.request.forms.submitForm as submitFormRequest
+import io.ktor.client.plugins.ResponseException as KtorResponseException
 
-private const val TAG = "MicrosoftAuth"
+private const val TAG = "AccountUtils"
 
-private val SCOPES = listOf("XboxLive.signin", "offline_access", "openid", "profile", "email")
-private const val TENANT = "/consumers"
+fun Account.isAuthServerAccount(): Boolean {
+    return !isLocalAccount() && !Objects.isNull(otherBaseUrl) && otherBaseUrl != "0"
+}
 
-/**
- * Dự phòng khi bản build không có OAUTH_CLIENT_ID.
- * Dán Application (client) ID của app Azure vào đây nếu không đặt được qua build config.
- */
-private const val FALLBACK_CLIENT_ID = "7852d7bd-28d9-4cb8-9e5a-96fb2590f02e"
-private val CLIENT_ID: String
-    get() = BuildKeys.OAUTH_CLIENT_ID.trim().ifBlank { FALLBACK_CLIENT_ID.trim() }
+fun Account.isMicrosoftAccount(): Boolean {
+    return accountType == AccountType.MICROSOFT.tag
+}
 
-/**
- * 轮询令牌时允许的最大连续网络失败次数
- * 网络环境较差时，偶发的失败不应中断登录，但持续失败说明网络不可用，应提前放弃
- */
-private const val MAX_CONSECUTIVE_POLL_FAILURES = 5
+fun Account.isLocalAccount(): Boolean {
+    return accountType == AccountType.LOCAL.tag
+}
 
-const val MICROSOFT_AUTH_URL = "https://login.microsoftonline.com"
-const val LIVE_AUTH_URL = "https://login.live.com"
-const val XBL_AUTH_URL = "https://user.auth.xboxlive.com"
-const val XSTS_AUTH_URL = "https://xsts.auth.xboxlive.com"
-const val MINECRAFT_SERVICES_URL = "https://api.minecraftservices.com"
+fun Account?.isNoLoginRequired(): Boolean {
+    return this == null || isLocalAccount()
+}
 
-/**
- * client_id 为空时，Microsoft 会直接返回 400，这里提前给出明确的错误
- */
-private fun requireClientId() {
-    if (CLIENT_ID.isBlank()) {
-        throw IllegalStateException(
-            "Chưa có OAUTH_CLIENT_ID (Azure Application client ID). " +
-                "Hãy đặt nó khi build (file .oauth_client_id.txt / biến môi trường OAUTH_CLIENT_ID / oauth_client_id trong gradle.properties) " +
-                "hoặc điền vào FALLBACK_CLIENT_ID trong MicrosoftAuthenticator.kt"
-        )
+fun Account.isSkinChangeAllowed(): Boolean {
+    return isMicrosoftAccount() || isLocalAccount()
+}
+
+fun Account.accountTypePriority(): Int {
+    return when (this.accountType) {
+        AccountType.MICROSOFT.tag -> 0 //微软账号优先
+        null -> Int.MAX_VALUE
+        else -> 1
     }
 }
 
-/**
- * 把只有状态码的 HTTP 异常，转换成带有服务端真实错误信息的异常，并写入日志
- */
-private suspend fun ResponseException.withBody(step: String): Exception {
-    val body = runCatching { response.safeBodyAsText() }.getOrNull().orEmpty().take(500)
-    Logger.error(TAG, "$step failed: HTTP ${response.status.value}, body = $body", this)
-    val detail = runCatching {
-        GLOBAL_JSON.decodeFromString<JsonObject>(body)["error_description"]?.jsonPrimitive?.content
-    }.getOrNull() ?: body
-    return Exception("($step) HTTP ${response.status.value}: $detail".trim(), this)
-}
+private const val MICROSOFT_LOGGING_TASK = "microsoft_logging_task"
 
 /**
- * 从 Microsoft 身份验证终端节点获取设备代码响应
- * 设备代码用于在单独的设备或浏览器上授权用户
+ * 检查当前微软账号登陆是否正在进行中
  */
-suspend fun fetchDeviceCodeResponse(context: CoroutineContext): DeviceCodeResponse = coroutineScope {
-    requireClientId()
-    try {
-        withRetry {
-            submitForm<DeviceCodeResponse>(
-                url = "$MICROSOFT_AUTH_URL$TENANT/oauth2/v2.0/devicecode",
-                parameters = Parameters.build {
-                    append("client_id", CLIENT_ID)
-                    append("scope", SCOPES.joinToString(" "))
-                },
-                context = context
+fun isMicrosoftLogging() = TaskSystem.containsTask(MICROSOFT_LOGGING_TASK)
+
+fun microsoftLogin(
+    context: Context,
+    useSystemBrowser: Boolean,
+    toWeb: (url: String) -> Unit,
+    toSystemBrowser: (url: String) -> Unit,
+    backToMain: () -> Unit,
+    checkIfInWebScreen: () -> Boolean,
+    updateOperation: (MicrosoftLoginOperation) -> Unit,
+    showToast: (AndroidStringText, duration: Int) -> Unit,
+    submitError: (ErrorViewModel.ThrowableMessage) -> Unit,
+    onSuccess: () -> Unit = {}
+) {
+    val task = Task.runTask(
+        id = MICROSOFT_LOGGING_TASK,
+        dispatcher = Dispatchers.IO,
+        task = { task ->
+            Logger.info(TAG, "Starting Microsoft account login")
+            task.updateProgress(-1f)
+            task.updateMessage(androidText(R.string.account_microsoft_fetch_device_code))
+            val deviceCode = fetchDeviceCodeResponse(coroutineContext)
+            Logger.debug(TAG, "Device code received, verification url: ${deviceCode.verificationUrl}, expires in ${deviceCode.expiresIn}s")
+            withContext(Dispatchers.Main) {
+                copyText(COPY_LABEL_DEVICE_CODE, deviceCode.userCode, context, false)
+            }
+            showToast(
+                androidText(R.string.account_microsoft_coped_device_code, deviceCode.userCode),
+                Toast.LENGTH_SHORT
             )
-        }
-    } catch (e: ClientRequestException) {
-        throw e.withBody("devicecode")
-    }
-}
-
-/**
- * 使用设备代码流从 Microsoft Azure Active Directory 检索访问令牌和刷新令牌
- * 此函数会定期轮询 Microsoft 令牌端点，直到获取访问令牌或超时
- */
-suspend fun getTokenResponse(
-    codeResponse: DeviceCodeResponse,
-    context: CoroutineContext,
-    tokenUrl: String = "$MICROSOFT_AUTH_URL$TENANT/oauth2/v2.0/token",
-    checkCancelled: suspend (time: Int) -> Boolean
-): TokenResponse = coroutineScope {
-    var pollingInterval = codeResponse.interval * 1000L
-    val expireTime = System.currentTimeMillis() + codeResponse.expiresIn * 1000L
-
-    var cancelled = 0
-    suspend fun checkIsReallyCancelled(): Boolean {
-        if (checkCancelled(cancelled)) cancelled++
-        return cancelled > 1
-    }
-
-    //连续的网络层失败次数，避免网络长期不可用时无意义地轮询到设备码过期
-    var consecutiveFailures = 0
-
-    Logger.debug(TAG, "Polling for token, interval = ${pollingInterval}ms, expires in ${codeResponse.expiresIn}s")
-
-    while (System.currentTimeMillis() < expireTime) {
-        context.ensureActive()
-
-        try {
-            val (httpResponse, responseBody) = withContext(context) {
-                val response = GLOBAL_CLIENT.submitFormRequest(
-                    url = tokenUrl,
-                    formParameters = Parameters.build {
-                        append("grant_type", "urn:ietf:params:oauth:grant-type:device_code")
-                        append("device_code", codeResponse.deviceCode)
-                        append("client_id", CLIENT_ID)
-                        append("tenant", TENANT)
-                    }
-                ) {
-                    contentType(ContentType.Application.FormUrlEncoded)
-                    expectSuccess = false
-                }
-                response to response.safeBodyAsText()
+            if (useSystemBrowser) {
+                toSystemBrowser(deviceCode.verificationUrl)
+            } else {
+                toWeb(deviceCode.verificationUrl)
             }
-            val response = GLOBAL_JSON.decodeFromString<JsonObject>(responseBody)
-            consecutiveFailures = 0
-
-            when (val error = response["error"].text()) {
-                "authorization_pending" -> Unit
-                "slow_down" -> {
-                    pollingInterval += 1000L
-                    Logger.debug(TAG, "Slowing down polling to ${pollingInterval}ms")
-                }
-                else -> {
-                    if (response["token_type"]?.jsonPrimitive?.content == "Bearer") {
-                        Logger.debug(TAG, "Access token successfully retrieved")
-                        return@coroutineScope TokenResponse(
-                            accessToken = response["access_token"].text(),
-                            refreshToken = response["refresh_token"].text(),
-                            expiresIn = response["expires_in"]?.jsonPrimitive?.int ?: 0
-                        )
-                    }
-                    when (httpResponse.status.value) {
-                        in 400..499 -> {
-                            val exception = ClientRequestException(httpResponse, responseBody)
-                            Logger.error(TAG, "Token endpoint rejected the polling request: error = $error", exception)
-                            throw exception
+            task.updateProgress(-1f)
+            task.updateMessage(androidText(R.string.account_microsoft_get_token, deviceCode.userCode))
+            val tokenResponse = getTokenResponse(deviceCode, coroutineContext) { time ->
+                if (useSystemBrowser) {
+                    //验证在系统浏览器中进行
+                    false
+                } else {
+                    (!checkIfInWebScreen()).also { exit ->
+                        if (exit && time > 0) {
+                            //如果已退出网页，则视为用户想要退出登录
+                            //弹出提示
+                            Logger.debug(TAG, "User left the web page during device code polling")
+                            showToast(
+                                androidText(R.string.account_microsoft_exit_by_user),
+                                Toast.LENGTH_LONG
+                            )
                         }
-                        !in 200..299 -> throw ServerResponseException(httpResponse, responseBody)
                     }
-                    Logger.warning(TAG, "Token endpoint responded without a Bearer token, continuing to poll")
                 }
             }
-        } catch (e: ClientRequestException) {
-            throw e
-        } catch (e: CancellationException) {
-            Logger.debug(TAG, "Authentication cancelled")
-            throw e
-        } catch (e: Exception) {
-            // 轮询期间的临时性错误（网络波动、DNS解析失败、服务器5xx、请求超时等）不应中断整个登录流程
-            // 只要设备码尚未过期，就继续轮询；但网络持续不可用时应提前放弃
-            consecutiveFailures++
-            if (consecutiveFailures >= MAX_CONSECUTIVE_POLL_FAILURES ||
-                System.currentTimeMillis() + pollingInterval >= expireTime
-            ) {
-                Logger.error(TAG, "Polling failed $consecutiveFailures time(s) in a row, giving up", e)
-                throw e
+            if (!useSystemBrowser) {
+                backToMain()
             }
-            Logger.warning(TAG, "Polling failed, will retry in ${pollingInterval}ms: ${e::class.simpleName}: ${e.message}")
+            val account = microsoftAuth(
+                AuthType.Access,
+                tokenResponse.refreshToken,
+                tokenResponse.accessToken,
+                coroutineContext = coroutineContext,
+                updateProgress = task::updateProgress,
+                updateMessage = task::updateMessage,
+            )
+            task.updateMessage(androidText(R.string.account_logging_in_saving))
+            account.downloadYggdrasil()
+            AccountsManager.saveAccount(account)
+            AccountsManager.markSessionValidated(account)
+            Logger.info(TAG, "Microsoft account login successful: ${account.username}")
+            onSuccess()
+        },
+        onError = { th ->
+            if (th !is CancellationException) {
+                Logger.error(TAG, "Microsoft account login failed", th)
+            }
+            when (th) {
+                is HttpRequestTimeoutException -> androidText(R.string.account_logging_time_out)
+                is NotPurchasedMinecraftException -> toLocal()
+                is MinecraftProfileException -> th.toLocal()
+                is XboxLoginException -> th.toLocal()
+                is UnknownHostException, is UnresolvedAddressException -> androidText(R.string.error_network_unreachable)
+                is ConnectException -> androidText(R.string.error_connection_failed)
+                is KtorResponseException -> th.toLocal()
+                is CancellationException -> { null }
+                else -> {
+                    androidText(
+                        th.localizedMessage ?: th.message ?: th::class.qualifiedName ?: "Unknown error"
+                    )
+                }
+            }?.let { message ->
+                submitError(
+                    ErrorViewModel.ThrowableMessage(
+                        title = androidText(R.string.account_logging_in_failed),
+                        message = message
+                    )
+                )
+            }
+        },
+        onFinally = {
+            updateOperation(MicrosoftLoginOperation.None)
         }
+    )
 
-        if (checkIsReallyCancelled()) {
-            Logger.debug(TAG, "The user left the web page, cancelling the authentication")
-            throw CancellationException("Authentication cancelled")
-        }
-
-        delay(pollingInterval.milliseconds).also {
-            context.ensureActive()
-        }
-    }
-    Logger.warning(TAG, "Device code expired before the user completed authorization")
-    throw HttpRequestTimeoutException("Authentication timed out!", expireTime)
+    TaskSystem.submitTask(task)
 }
 
-/**
- * 从 OAuth 错误响应中解析 error 字段
- */
-private suspend fun ClientRequestException.errorCode(): String? {
-    return runCatching {
-        response.safeBodyAsJson<JsonObject>()["error"]?.jsonPrimitive?.content
-    }.getOrNull()
-}
-
-/**
- * 使用不同的身份验证类型异步验证用户，并检索其 Minecraft 帐户信息
- * 函数通过执行一系列步骤来编排身份验证过程，具体取决于提供的 [authType]。
- *
- * 支持刷新现有访问令牌或使用提供的访问令牌。然后，继续使用 Xbox Live （XBL）、Xbox 安全令牌服务 （XSTS） 进行身份验证，最后访问 Minecraft。
- *
- * 支持验证用户是否拥有游戏，然后创建 [Account] 对象。
- *
- * @param statusUpdate 验证执行到哪个步骤，通过这个进行回调更新
- */
-suspend fun microsoftAuthAsync(
+private suspend fun microsoftAuth(
     authType: AuthType,
     refreshToken: String,
     accessToken: String = "NULL",
-    context: CoroutineContext,
-    statusUpdate: (AsyncStatus) -> Unit,
-): Account = coroutineScope {
-    val (finalAccessToken, newRefreshToken) = when (authType) {
-        AuthType.Refresh -> refreshAccessToken(refreshToken, statusUpdate, context)
-        else -> Pair(accessToken, refreshToken)
+    coroutineContext: CoroutineContext,
+    updateProgress: (Float) -> Unit,
+    updateMessage: (AndroidStringText?) -> Unit,
+): Account {
+    return microsoftAuthAsync(authType, refreshToken, accessToken, coroutineContext) { asyncStatus ->
+        when (asyncStatus) {
+            AsyncStatus.GETTING_ACCESS_TOKEN -> {
+                updateProgress(0.25f)
+                updateMessage(androidText(R.string.account_microsoft_getting_access_token))
+            }
+            AsyncStatus.GETTING_XBL_TOKEN -> {
+                updateProgress(0.4f)
+                updateMessage(androidText(R.string.account_microsoft_getting_xbl_token))
+            }
+            AsyncStatus.GETTING_XSTS_TOKEN -> {
+                updateProgress(0.55f)
+                updateMessage(androidText(R.string.account_microsoft_getting_xsts_token))
+            }
+            AsyncStatus.AUTHENTICATE_MINECRAFT -> {
+                updateProgress(0.7f)
+                updateMessage(androidText(R.string.account_microsoft_authenticate_minecraft))
+            }
+            AsyncStatus.VERIFY_GAME_OWNERSHIP -> {
+                updateProgress(0.85f)
+                updateMessage(androidText(R.string.account_microsoft_verify_game_ownership))
+            }
+            AsyncStatus.GETTING_PLAYER_PROFILE -> {
+                updateProgress(1f)
+                updateMessage(androidText(R.string.account_microsoft_getting_player_profile))
+            }
+        }
     }
+}
 
-    Logger.debug(TAG, "Authenticating with Xbox Live (XBL)")
-    val xblToken = authenticateXBL(finalAccessToken, statusUpdate)
-    Logger.debug(TAG, "Authenticating with Xbox Secure Token Service (XSTS)")
-    val xstsToken = authenticateXSTS(xblToken.first, xblToken.second, statusUpdate, context)
-    Logger.debug(TAG, "Authenticating with Minecraft services")
-    val authResponse = authenticateMinecraft(xstsToken, statusUpdate, context)
-    Logger.debug(TAG, "Verifying Minecraft ownership")
-    verifyGameOwnership(authResponse.accessToken, statusUpdate)
+fun microsoftRefresh(
+    account: Account,
+    onSuccess: suspend (Account, Task) -> Unit,
+    onFailed: (th: Throwable) -> Unit = {},
+    onFinally: () -> Unit = {}
+): Task? {
+    if (TaskSystem.containsTask(account.profileId)) return null
 
-    return@coroutineScope createAccount(authResponse, newRefreshToken, xblToken.second, statusUpdate)
+    return Task.runTask(
+        id = account.profileId,
+        dispatcher = Dispatchers.IO,
+        task = { task ->
+            account.refreshMicrosoft(task, coroutineContext)
+            onSuccess(account, task)
+        },
+        onError = { e ->
+            if (e is CancellationException) return@runTask
+            onFailed(e)
+        },
+        onFinally = onFinally
+    )
+}
+
+suspend fun Account.refreshMicrosoft(
+    task: Task,
+    coroutineContext: CoroutineContext = Dispatchers.IO
+) {
+    val newAcc = microsoftAuth(
+        AuthType.Refresh,
+        refreshToken,
+        accessToken,
+        coroutineContext = coroutineContext,
+        updateProgress = task::updateProgress,
+        updateMessage = task::updateMessage,
+    )
+    apply {
+        this.accessToken = newAcc.accessToken
+        this.clientToken = newAcc.clientToken
+        this.profileId = newAcc.profileId
+        this.username = newAcc.username
+        this.refreshToken = newAcc.refreshToken
+        this.xUid = newAcc.xUid
+    }
+}
+
+fun otherLogin(
+    context: Context,
+    account: Account,
+    onSuccess: suspend (Account, task: Task) -> Unit = { _, _ -> },
+    onFailed: (th: Throwable) -> Unit = {},
+    onFinally: () -> Unit = {}
+): Task? {
+    if (TaskSystem.containsTask(account.uniqueUUID)) return null
+
+    return AuthServerHelper(
+        baseUrl = account.otherBaseUrl!!,
+        serverName = account.accountType!!,
+        email = account.otherAccount!!,
+        password = account.otherPassword!!,
+        onSuccess = onSuccess,
+        onFailed = onFailed,
+        onFinally = onFinally
+    ).justLogin(context, account)
 }
 
 /**
- * 校验缓存的 accessToken 是否仍被服务端接受
- * @return false 表示服务端已拒绝该凭据
+ * 该异常代表本地存储的凭据已被服务端拒绝，无法通过刷新恢复，需要重新登录账号
  */
-suspend fun validateAccessToken(account: Account): Boolean = try {
-    getPlayerProfile(MINECRAFT_SERVICES_URL, account.accessToken)
-    true
-} catch (e: MinecraftProfileException) {
-    false
-} catch (e: ResponseException) {
-    when (e.response.status.value) {
-        401, 403 -> false
-        else -> throw e
-    }
+fun Throwable.isReloginRequired(): Boolean {
+    return this is CredentialsExpiredException ||
+            (this is ResponseException && statusCode == 403)
 }
 
-private suspend fun refreshAccessToken(
-    refreshToken: String,
-    update: (AsyncStatus) -> Unit,
-    context: CoroutineContext
-): Pair<String, String> {
-    update(AsyncStatus.GETTING_ACCESS_TOKEN)
-
-    return withRetry {
-        try {
-            val response = submitForm<JsonObject>(
-                url = "$MICROSOFT_AUTH_URL$TENANT/oauth2/v2.0/token",
-                parameters = Parameters.build {
-                    append("client_id", CLIENT_ID)
-                    append("refresh_token", refreshToken)
-                    append("grant_type", "refresh_token")
-                    append("scope", SCOPES.joinToString(" "))
-                },
-                context = context
-            )
-            Pair(
-                response["access_token"].text(),
-                response["refresh_token"]?.jsonPrimitive?.content ?: refreshToken
-            )
-        } catch (e: ClientRequestException) {
-            //刷新令牌已被撤销或失效，无法自动恢复
-            if (e.errorCode() == "invalid_grant") throw CredentialsExpiredException()
-            throw e.withBody("refresh_token")
-        }
-    }
-}
-
-private suspend fun authenticateXBL(accessToken: String, update: (AsyncStatus) -> Unit): Pair<String, String> {
-    update(AsyncStatus.GETTING_XBL_TOKEN)
-
-    suspend fun requestXblToken(rpsTicket: String): Pair<String, String> {
-        val requestBody = XBLRequest(
-            properties = XBLProperties(
-                authMethod = "RPS",
-                siteName = "user.auth.xboxlive.com",
-                rpsTicket = rpsTicket
-            ),
-            relyingParty = "http://auth.xboxlive.com",
-            tokenType = "JWT"
+fun accountErrorText(th: Throwable): AndroidStringText = when (th) {
+    is NotPurchasedMinecraftException -> toLocal()
+    is MinecraftProfileException -> th.toLocal()
+    is XboxLoginException -> th.toLocal()
+    is HttpRequestTimeoutException -> androidText(R.string.error_timeout)
+    is UnknownHostException, is UnresolvedAddressException -> androidText(R.string.error_network_unreachable)
+    is ConnectException -> androidText(R.string.error_connection_failed)
+    is KtorResponseException -> th.toLocal()
+    is ResponseException -> androidText(th.responseMessage)
+    else -> {
+        Logger.error(TAG, "An unknown exception was caught!", th)
+        androidText(
+            th.localizedMessage ?: th.message ?: th::class.qualifiedName ?: "Unknown error"
         )
-
-        val response = GLOBAL_CLIENT.post("$XBL_AUTH_URL/user/authenticate") {
-            contentType(ContentType.Application.Json)
-            setBody(requestBody)
-        }.safeBodyAsJson<JsonObject>()
-
-        //提取uhs
-        val uhs = response["DisplayClaims"]?.jsonObject
-            ?.get("xui")?.jsonArray
-            ?.firstOrNull()?.jsonObject
-            ?.get("uhs")?.jsonPrimitive
-            ?.content ?: throw Exception("Missing uhs in XBL response")
-
-        return Pair(response["Token"].text(), uhs)
-    }
-
-    return withRetry {
-        try {
-            requestXblToken("d=$accessToken")
-        } catch (e: ClientRequestException) {
-            // 参考 Wiki：RpsTicket 如遇 400 Bad Request，可尝试去掉 "d=" 前缀重新请求
-            // https://zh.minecraft.wiki/w/Tutorial:%E7%BC%96%E5%86%99%E5%90%AF%E5%8A%A8%E5%99%A8#Xbox_Live%E8%BA%AB%E4%BB%BD%E9%AA%8C%E8%AF%81
-            if (e.response.status.value == 400) {
-                Logger.warning(TAG, "XBL authentication rejected the d= prefixed RpsTicket, retrying without the prefix")
-                try {
-                    requestXblToken(accessToken)
-                } catch (e2: ClientRequestException) {
-                    throw e2.withBody("xbl")
-                }
-            } else throw e.withBody("xbl")
-        }
     }
 }
 
-private suspend fun authenticateXSTS(
-    xblToken: String,
-    uhs: String,
-    update: (AsyncStatus) -> Unit,
-    context: CoroutineContext
-): XSTSAuthResult {
-    update(AsyncStatus.GETTING_XSTS_TOKEN)
+/**
+ * 离线账号登陆
+ */
+fun localLogin(userName: String, userUUID: String?) {
+    val account = if (userUUID != null) {
+        Account(
+            username = userName,
+            profileId = userUUID,
+            accountType = AccountType.LOCAL.tag
+        )
+    } else {
+        //如果不填，则使用默认生成的 uuid
+        Account(
+            username = userName,
+            accountType = AccountType.LOCAL.tag
+        )
+    }
+    AccountsManager.saveAccount(account)
+}
 
-    return withRetry {
-        try {
-            val response = httpPostJson<JsonObject>(
-                url = "$XSTS_AUTH_URL/xsts/authorize",
-                body = XSTSRequest(
-                    properties = XSTSProperties(
-                        sandboxId = "RETAIL",
-                        userTokens = listOf(xblToken)
-                    ),
-                    relyingParty = "rp://api.minecraftservices.com/",
-                    tokenType = "JWT"
-                ),
-                context = context
-            )
+/**
+ * [From HMCL](https://github.com/HMCL-dev/HMCL/blob/5c2bb1cc251901dd471a8aa8048d90c22bb56916/HMCLCore/src/main/java/org/jackhuang/hmcl/util/gson/UUIDTypeAdapter.java#L55)
+ */
+private val regex = Regex("(\\w{8})(\\w{4})(\\w{4})(\\w{4})(\\w{12})")
 
-            XSTSAuthResult(token = response["Token"].text(), uhs = uhs)
-        } catch (e: ClientRequestException) {
-            // XSTS 对账号类问题统一返回 4xx 及 XErr 错误码，expectSuccess 会提前抛出异常
-            // 因此必须从异常响应体中解析 XErr，才能向用户展示真实的失败原因
-            val errorBody = runCatching { e.response.safeBodyAsJson<JsonObject>() }.getOrNull()
-            when (val xErr = errorBody?.get("XErr").text()) {
-                //Reference : https://github.com/PrismarineJS/prismarine-auth/blob/1aef6e1/src/common/Constants.js#L50-L59
-                "2148916227" -> throw XboxLoginException(BANNED)
-                "2148916229" -> throw XboxLoginException(RESTRICTED)
-                "2148916233" -> throw XboxLoginException(UNREGISTERED)
-                "2148916234" -> throw XboxLoginException(NOT_ACCEPTED_SERVICE)
-                "2148916235" -> throw XboxLoginException(BLOCKED_REGION)
-                "2148916236" -> throw XboxLoginException(REQUIRES_PROOF_OF_AGE)
-                "2148916237" -> throw XboxLoginException(REACHED_PLAYTIME_LIMIT)
-                "2148916238" -> throw XboxLoginException(UNDERAGE)
-                else -> {
-                    Logger.error(
-                        TAG,
-                        "XSTS authentication failed: status = ${e.response.status}, XErr = $xErr, message = ${errorBody?.get("Message").text()}"
+/**
+ * [From HMCL](https://github.com/HMCL-dev/HMCL/blob/5c2bb1cc251901dd471a8aa8048d90c22bb56916/HMCLCore/src/main/java/org/jackhuang/hmcl/util/gson/UUIDTypeAdapter.java#L57-L59)
+ */
+fun accountUUID(input: String): UUID {
+    val formatted = regex.replace(input, "$1-$2-$3-$4-$5")
+    return UUID.fromString(formatted)
+}
+
+fun accountUUID(input: UUID): String {
+    return input.toString().replace("-", "")
+}
+
+/**
+ * [From HMCL](https://github.com/HMCL-dev/HMCL/blob/5c2bb1cc251901dd471a8aa8048d90c22bb56916/HMCLCore/src/main/java/org/jackhuang/hmcl/auth/offline/OfflineAccountFactory.java#L79-L81)
+ */
+fun getUUIDFromUserName(username: String): UUID {
+    return UUID.nameUUIDFromBytes(("OfflinePlayer:$username").toByteArray(Charsets.UTF_8))
+}
+
+fun addOtherServer(
+    serverUrl: String,
+    onThrowable: (Throwable) -> Unit = {}
+) {
+    val task = Task.runTask(
+        task = { task ->
+            task.updateProgress(-1f)
+            task.updateMessage(androidText(R.string.account_other_login_getting_full_url))
+            val isNide8 = isValidPassportId(serverUrl)
+            val fullServerUrl = if (isNide8) {
+                //可能是一个统一通行证服务器ID
+                "https://auth.mc-user.com:233/$serverUrl"
+            } else {
+                tryGetFullServerUrl(serverUrl)
+            }
+            ensureActive()
+            task.updateProgress(0.5f)
+            task.updateMessage(androidText(R.string.account_other_login_getting_server_info))
+            runCatching {
+                getAuthServeInfo(fullServerUrl)
+            }.onFailure { th ->
+                Logger.error(TAG, "Failed to get server info", th)
+                onThrowable(th)
+            }.getOrNull()?.let { data ->
+                JSONObject(data).optJSONObject("meta")?.let { meta ->
+                    if (AccountsManager.isAuthServerExists(fullServerUrl)) {
+                        //确保服务器不重复
+                        return@runTask
+                    }
+                    val server = AuthServer(
+                        serverName = meta.optString("serverName"),
+                        baseUrl = fullServerUrl,
+                        register = if (!isNide8) {
+                            meta.optJSONObject("links")?.optString("register") ?: ""
+                        } else "https://login.mc-user.com:233/$serverUrl"
                     )
-                    throw e
+                    task.updateProgress(0.8f)
+                    task.updateMessage(androidText(R.string.account_other_login_saving_server))
+                    AccountsManager.saveAuthServer(server)
+                    task.updateProgress(1f)
+                    task.updateMessage(androidText(R.string.generic_done))
                 }
             }
+        },
+        onError = { e ->
+            onThrowable(e)
+            Logger.error(TAG, "Failed to add auth server", e)
         }
-    }
-}
-
-private suspend fun authenticateMinecraft(
-    xstsResult: XSTSAuthResult,
-    update: (AsyncStatus) -> Unit,
-    context: CoroutineContext
-): MinecraftAuthResponse {
-    update(AsyncStatus.AUTHENTICATE_MINECRAFT)
-
-    return withRetry {
-        runCatching {
-            httpPostJson<MinecraftAuthResponse>(
-                url = "$MINECRAFT_SERVICES_URL/authentication/login_with_xbox",
-                body = mapOf("identityToken" to "XBL3.0 x=${xstsResult.uhs};${xstsResult.token}"),
-                context = context
-            )
-        }.onFailure { e ->
-            if (e is ResponseException) {
-                when (e.response.status.value) {
-                    429 -> {
-                        // Keep the user-friendly rate-limit status, but preserve the server
-                        // response in the diagnostic log for troubleshooting.
-                        e.withBody("minecraft login (rate limited)")
-                        throw MinecraftProfileException(FREQUENT)
-                    }
-                    403 -> {
-                        // A 403 is not always an IP block. Minecraft Services can also reject
-                        // the OAuth application itself (for example: "Invalid app registration").
-                        // Read and log the response body before deciding what to show.
-                        val detail = e.withBody("minecraft login")
-                        val message = detail.message.orEmpty()
-                        if (message.contains("Invalid app registration", ignoreCase = true) ||
-                            message.contains("AppRegInfo", ignoreCase = true)
-                        ) {
-                            throw IllegalStateException(
-                                "Minecraft Services rejected this OAuth app registration (HTTP 403). " +
-                                    "This is an application/client-ID configuration issue, not proof of an IP block. " +
-                                    "Check that the configured Microsoft OAuth Client ID is valid and approved for " +
-                                    "Minecraft Services. Server response: $message",
-                                e
-                            )
-                        }
-                        // Preserve the existing IP-block explanation for other 403 responses.
-                        throw MinecraftProfileException(BLOCKED_IP)
-                    }
-                }
-            }
-        }.getOrThrow()
-    }
-}
-
-private suspend fun verifyGameOwnership(accessToken: String, update: (AsyncStatus) -> Unit) {
-    update(AsyncStatus.VERIFY_GAME_OWNERSHIP)
-    withRetry {
-        val response = GLOBAL_CLIENT.get("$MINECRAFT_SERVICES_URL/entitlements/mcstore") {
-            header(HttpHeaders.Authorization, "Bearer $accessToken")
-        }
-        if (response.safeBodyAsJson<JsonObject>()["items"]?.jsonArray?.isEmpty() != false) {
-            throw NotPurchasedMinecraftException()
-        }
-    }
-}
-
-private suspend fun createAccount(
-    authResponse: MinecraftAuthResponse,
-    refreshToken: String,
-    uhs: String,
-    statusUpdate: (AsyncStatus) -> Unit
-): Account {
-    statusUpdate(AsyncStatus.GETTING_PLAYER_PROFILE)
-
-    val profile = getPlayerProfile(
-        apiUrl = MINECRAFT_SERVICES_URL,
-        accessToken = authResponse.accessToken
     )
 
-    val profileId = profile.id
-    //避免同一个账号反复添加
-    val account = AccountsManager.loadFromProfileID(profileId, AccountType.MICROSOFT.tag) ?: Account()
+    TaskSystem.submitTask(task)
+}
 
-    return account.apply {
-        this.username = profile.name
-        this.accessToken = authResponse.accessToken
-        this.expiresAt = System.currentTimeMillis() + authResponse.expiresIn * 1000
-        this.accountType = AccountType.MICROSOFT.tag
-        this.clientToken = BuildKeys.LAUNCHER_NAME.toUuidStr().replace("-", "")
-        this.profileId = profileId
-        this.refreshToken = refreshToken.ifEmpty { "None" }
-        this.xUid = uhs
-        this.skinModelType = profile.skins.findUsing()?.getSkinModel() ?: SkinModelType.NONE
+/**
+ * 获取账号类型名称
+ */
+@Composable
+fun getAccountTypeName(account: Account): String {
+    return if (account.isMicrosoftAccount()) {
+        stringResource(R.string.account_type_microsoft)
+    } else if (account.isAuthServerAccount()) {
+        account.accountType ?: "Unknown"
+    } else {
+        stringResource(R.string.account_type_local)
     }
 }
 
-private fun JsonElement?.text() = this?.jsonPrimitive?.content.orEmpty()
+/**
+ * 修改自源代码：[HMCL Core: AuthlibInjectorServer.java](https://github.com/HMCL-dev/HMCL/blob/b38076f/HMCLCore/src/main/java/org/jackhuang/hmcl/auth/authlibinjector/AuthlibInjectorServer.java#L53-L85)
+ * <br>原项目版权归原作者所有，遵循GPL v3协议
+ */
+fun tryGetFullServerUrl(baseUrl: String): String {
+    fun String.addSlashIfMissing(): String {
+        if (!endsWith("/")) return "$this/"
+        return this
+    }
 
-private suspend fun <T> withRetry(
-    maxRetries: Int = 3,
-    initialDelay: Long = 1000,
-    maxDelay: Long = 10_000,
-    block: suspend () -> T
-): T = com.movtery.zalithlauncher.utils.network.withRetry(
-    "MicrosoftAuthenticator", maxRetries, initialDelay, maxDelay, block
-)
+    val initialUrl = addHttpsIfMissing(baseUrl)
+
+    fun probe(url: String): Response =
+        DOWNLOAD_OKHTTP_CLIENT.newCall(
+            Request.Builder().url(url).header("User-Agent", URL_USER_AGENT).build()
+        ).execute()
+
+    return runCatching {
+        var finalUrl = initialUrl
+
+        probe(finalUrl).use { response ->
+            response.header("x-authlib-injector-api-location")?.let { ali ->
+                val resolved = response.request.url.resolve(ali)?.toString()?.addSlashIfMissing()
+                if (resolved != null && resolved != finalUrl.addSlashIfMissing()) {
+                    finalUrl = resolved
+                }
+            }
+        }
+
+        finalUrl.addSlashIfMissing()
+    }.getOrElse { e ->
+        Logger.error(TAG, "Failed to get full server url", e)
+        initialUrl
+    }
+}
+
+/**
+ * 修改自源代码：[HMCL Core: AuthlibInjectorServer.java](https://github.com/HMCL-dev/HMCL/blob/main/HMCLCore/src/main/java/org/jackhuang/hmcl/auth/authlibinjector/AuthlibInjectorServer.java#L90-#L96)
+ * <br>原项目版权归原作者所有，遵循GPL v3协议
+ */
+private fun addHttpsIfMissing(baseUrl: String): String {
+    return if (!baseUrl.startsWith("http://", true) && !baseUrl.startsWith("https://")) {
+        "https://$baseUrl".lowercase(Locale.ROOT)
+    } else baseUrl.lowercase(Locale.ROOT)
+}
+
+/**
+ * 检查是否为32位16进制字符串，这可能是一个
+ * 统一通行证的服务器ID
+ */
+private fun isValidPassportId(id: String): Boolean {
+    val pattern = Regex("^[0-9a-f]{32}$", RegexOption.IGNORE_CASE)
+    return pattern.matches(id)
+}
