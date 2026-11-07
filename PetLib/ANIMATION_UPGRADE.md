@@ -96,3 +96,15 @@ Chạy `cargo test` trong `PetLib/rust` để xác nhận.
 - Dồn lực rồi quay: thân xoắn ngược (wind-up) trước, rồi bị kéo trễ theo vòng quay và lắng lại có overshoot; đầu quay trước thân (nhìn về camera trước), liếc qua vai rồi vào nhịp.
 - Hạ thấp lúc bắt đầu quay (body_y -1,2), hai chân bước xoay MẠNH (x ±46°/32° ngược pha, dạng ngang thêm 12°), hai tay dang ra giữ thăng bằng rồi thu vào trước ngực để vào tư thế cúi.
 - Chưa build/chạy thử được trong môi trường này.
+
+## v14: sửa cúi chào bị ngả NGƯỢC ra sau
+- Nguyên nhân thật: quy ước trong clip bị ngược. Trong cảnh render (mặt trước = +Z, cape ở lưng z = -2), `body.x` / `head.x` DƯƠNG làm thân/đầu ngả ra SAU, tay/chân x dương vung ra TRƯỚC. Trước đây clip cúi dùng x dương (88°) nên thân ngửa ra sau 88°, cape cũng bị kẹt.
+- Đã đảo dấu x cho toàn bộ đoạn cúi (từ 3,6s): thân -88°, đầu thêm -16..-21° (cúi xuống), tay phải áp trước ngực (x tích lũy -268..-318° để không xoay ngược từ vị trí giơ lên trời), tay trái buông, chân phải lùi x -24°, chân trái đỡ +8°. Đã kiểm tra bằng tính toán: hướng đỉnh thân lúc giữ cúi (5,2s) z = +1,0 (hướng về mặt trước).
+- Các đoạn trước 3,3s giữ nguyên (đã được duyệt); chỉ chú thích lại quy ước trong `gen_fun_clips.py`.
+- Chưa build/chạy thử được trong môi trường này.
+
+## v15: màn khoe cape dài ~9,7s (trước 6,3s), nhịp chỉn chu hơn
+- `gen_fun_clips.py`: kịch bản gốc 6,3s được kéo giãn theo từng đoạn (`SEGS`/`warp`): bật/xoay/tiếp đất giữ nguyên (0 – 1,5s); tạo dáng x1,7 (1,5 – 4,56s); quay người + hít vào x1,35 (đến 5,78s); cúi xuống x1,6 (đến 6,9s); **giữ cúi x2,4 (6,9 – 8,7s, thở nhẹ)**; đứng dậy x1,6 (đến 9,74s). Mọi chuyển động chậm lại nên mềm hơn, các cú bước/xoay không còn gắt.
+- `PetController.kt` bám theo mốc mới: `TURN_START` 4,39s / `TURN_SECONDS` 1,12s, `SHOW_OFF_ACTIVE_MILLIS` 11500, camera đẩy nhẹ 2,0 – 4,7s, đẩy vào lúc cúi 5,5 – 9,4s, dừng 9,8s, lưới an toàn recenter 6,5s. Spin 360° (0,78s) và camera nảy (1,55s) giữ nguyên.
+- Rust lấy thời lượng từ dữ liệu clip nên không phải sửa.
+- Chưa build/chạy thử được trong môi trường này.

@@ -55,9 +55,9 @@ private const val ACTIVE_LINGER_MILLIS = 1500L
 private const val SPIN_START = 0.78f // giây kể từ đầu khoe cape; yaw được làm mượt nên bắt đầu sớm hơn lúc rời đất một chút
 private const val SPIN_SECONDS = 0.6f
 // Quay người từ lưng về mặt trước (camera) rồi mới cúi chào: bắt đầu 3,2s, xong ~4,0s, trước khi thân gập (4,2s+).
-private const val TURN_START = 3.2f
-private const val TURN_SECONDS = 0.8f
-private const val SHOW_OFF_ACTIVE_MILLIS = 7500L // clip 6,3s + đuôi 0,5s + dư
+private const val TURN_START = 4.39f // clip đã kéo giãn (9,7s): u=3,2 -> t=4,39
+private const val TURN_SECONDS = 1.12f
+private const val SHOW_OFF_ACTIVE_MILLIS = 11500L // clip 9,74s + đuôi 0,5s + dư
 
 /**
  * 帧间隔下限
@@ -201,9 +201,9 @@ class PetController(
             val ramp = smootherstep(d / 0.08f)
             return amp * ramp * exp(-d / decay) * (0.65f + 0.35f * sin(2f * Math.PI.toFloat() * hz * d + 1.57f))
         }
-        val push = if (t in 1.8f..3.4f) 0.05f * sin(((t - 1.8f) / 1.6f) * Math.PI.toFloat()) else 0f
+        val push = if (t in 2.0f..4.7f) 0.05f * sin(((t - 2.0f) / 2.7f) * Math.PI.toFloat()) else 0f
         // Màn cúi sâu (4,0 – 6,1s): đẩy camera vào chậm rồi trả lại, không nảy mạnh.
-        val bow = if (t in 4.0f..6.1f) 0.07f * sin(((t - 4.0f) / 2.1f) * Math.PI.toFloat()) else 0f
+        val bow = if (t in 5.5f..9.4f) 0.07f * sin(((t - 5.5f) / 3.9f) * Math.PI.toFloat()) else 0f
         return push + bump(1.55f, 0.13f, 0.22f, 3.5f) + bow
     }
 
@@ -211,7 +211,7 @@ class PetController(
         override fun run() {
             if (!punching || released) return
             val t = (SystemClock.uptimeMillis() - punchStartMs) / 1000f
-            if (t > 6.2f) {
+            if (t > 9.8f) {
                 punching = false
                 PetLibNative.nativeSetZoom(ptr, baseZoom)
                 return
@@ -253,7 +253,7 @@ class PetController(
     }
 
     /**
-     * Khoe cape ("anh hùng ra mắt", ~6,3s): xoay lưng, bật cao giơ tay lên trời và xoay 360° trên không,
+     * Khoe cape ("anh hùng ra mắt", ~9,7s): xoay lưng, bật cao giơ tay lên trời và xoay 360° trên không,
      * tiếp đất, tạo dáng, rồi QUAY NGƯỜI về mặt trước (3,2 – 4,0s) và cúi sâu chào (~85°). Gọi trên luồng render.
      * Tay hạ xong khoảng 6,2s. [recenterAfterShowOff] ở cuối chỉ còn là lưới an toàn (đã ở mặt trước nên không xoay thêm).
      */
@@ -273,7 +273,7 @@ class PetController(
         startCameraPunch()
         markActive(maxOf(SHOW_OFF_ACTIVE_MILLIS, holdMillis + ACTIVE_LINGER_MILLIS))
         // Quay về mặt trước đã do cameraPunchTick làm lúc 3,2 – 4,0s; recenter ở đây chỉ là lưới an toàn
-        handler.postDelayed(recenterAfterShowOff, maxOf(holdMillis, 4300L))
+        handler.postDelayed(recenterAfterShowOff, maxOf(holdMillis, 6500L))
     }
 
     /**
