@@ -121,3 +121,9 @@ Chạy `cargo test` trong `PetLib/rust` để xác nhận.
 - Đầu nghiêng nhẹ (z -3..+3°) khi giữ cúi, rồi nghiêng 4° lúc đứng dậy.
 - Kết: ngẩng đầu lên (-5°) rồi gật chào nhẹ (+5°) trước khi về tư thế nghỉ.
 - Chưa build/chạy thử được trong môi trường này; cần build lại thư viện Rust.
+
+## v18: sửa cúi chào bị ngược (đúng quy ước renderer)
+- Nguyên nhân: v16 hoàn nguyên đảo dấu của v14 theo quy ước sai. Theo renderer (`render.rs`): mặt trước = +Z (cape ở z = -2), `flip_quat` đổi dấu x nên clip `x` thành `Rx(-x)` trong không gian render. Hệ quả: **thân/đầu x DƯƠNG = ngả ra SAU**, x ÂM = cúi ra trước; **tay/chân x DƯƠNG = vung ra TRƯỚC**. Video bản v17 khớp: ngực/khăn hướng lên, cape nằm dưới thân.
+- `gen_fun_clips.py`: đảo dấu x của đoạn cúi (từ lúc hít vào 3,95s): thân -88° (hít vào +6° ưỡn nhẹ), đầu -16..-21°, tay phải cộng dồn -268..-360° (hạ từ trên trời qua phía trước tới ngực, về nghỉ = -360°), tay trái +62°, chân phải lùi -24°, chân trái đỡ +8°. Các đoạn trước đó không đổi.
+- `quat_euler` chuẩn hoá w >= 0 (q và -q cùng một phép quay) để tay phải kết thúc -360° vẫn ra identity; sampler Rust đã tự căn bán cầu nên không ảnh hưởng nội suy.
+- Đã kiểm tra bằng tính toán FK theo chuỗi render: lúc giữ cúi ngực nằm DƯỚI lưng trên màn hình (đỉnh thân hướng +Z). Chưa build Android/`cargo test` được; cần build lại thư viện Rust (`clip_fun.rs` đã sinh lại).
