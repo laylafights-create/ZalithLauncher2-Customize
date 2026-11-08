@@ -55,9 +55,9 @@ private const val ACTIVE_LINGER_MILLIS = 1500L
 private const val SPIN_START = 0.78f // giây kể từ đầu khoe cape; yaw được làm mượt nên bắt đầu sớm hơn lúc rời đất một chút
 private const val SPIN_SECONDS = 0.6f
 // Quay người từ lưng về mặt trước (camera) rồi mới cúi chào: bắt đầu 3,2s, xong ~4,0s, trước khi thân gập (4,2s+).
-private const val TURN_START = 4.39f // clip đã kéo giãn (9,7s): u=3,2 -> t=4,39
-private const val TURN_SECONDS = 1.12f
-private const val SHOW_OFF_ACTIVE_MILLIS = 11500L // clip 9,74s + đuôi 0,5s + dư
+private const val TURN_START = 4.9f // clip đã kéo giãn (11,2s): u=3,2 -> t=4,9
+private const val TURN_SECONDS = 1.32f
+private const val SHOW_OFF_ACTIVE_MILLIS = 13000L // clip 11,19s + đuôi 0,5s + dư
 
 /**
  * 帧间隔下限
@@ -201,9 +201,9 @@ class PetController(
             val ramp = smootherstep(d / 0.08f)
             return amp * ramp * exp(-d / decay) * (0.65f + 0.35f * sin(2f * Math.PI.toFloat() * hz * d + 1.57f))
         }
-        val push = if (t in 2.0f..4.7f) 0.05f * sin(((t - 2.0f) / 2.7f) * Math.PI.toFloat()) else 0f
+        val push = if (t in 2.1f..5.4f) 0.05f * sin(((t - 2.1f) / 3.3f) * Math.PI.toFloat()) else 0f
         // Màn cúi sâu (4,0 – 6,1s): đẩy camera vào chậm rồi trả lại, không nảy mạnh.
-        val bow = if (t in 5.5f..9.4f) 0.07f * sin(((t - 5.5f) / 3.9f) * Math.PI.toFloat()) else 0f
+        val bow = if (t in 6.3f..10.9f) 0.07f * sin(((t - 6.3f) / 4.6f) * Math.PI.toFloat()) else 0f
         return push + bump(1.55f, 0.13f, 0.22f, 3.5f) + bow
     }
 
@@ -211,7 +211,7 @@ class PetController(
         override fun run() {
             if (!punching || released) return
             val t = (SystemClock.uptimeMillis() - punchStartMs) / 1000f
-            if (t > 9.8f) {
+            if (t > 11.3f) {
                 punching = false
                 PetLibNative.nativeSetZoom(ptr, baseZoom)
                 return
@@ -273,7 +273,7 @@ class PetController(
         startCameraPunch()
         markActive(maxOf(SHOW_OFF_ACTIVE_MILLIS, holdMillis + ACTIVE_LINGER_MILLIS))
         // Quay về mặt trước đã do cameraPunchTick làm lúc 3,2 – 4,0s; recenter ở đây chỉ là lưới an toàn
-        handler.postDelayed(recenterAfterShowOff, maxOf(holdMillis, 6500L))
+        handler.postDelayed(recenterAfterShowOff, maxOf(holdMillis, 8000L))
     }
 
     /**

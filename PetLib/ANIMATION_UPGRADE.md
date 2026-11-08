@@ -127,3 +127,26 @@ Chạy `cargo test` trong `PetLib/rust` để xác nhận.
 - `gen_fun_clips.py`: đảo dấu x của đoạn cúi (từ lúc hít vào 3,95s): thân -88° (hít vào +6° ưỡn nhẹ), đầu -16..-21°, tay phải cộng dồn -268..-360° (hạ từ trên trời qua phía trước tới ngực, về nghỉ = -360°), tay trái +62°, chân phải lùi -24°, chân trái đỡ +8°. Các đoạn trước đó không đổi.
 - `quat_euler` chuẩn hoá w >= 0 (q và -q cùng một phép quay) để tay phải kết thúc -360° vẫn ra identity; sampler Rust đã tự căn bán cầu nên không ảnh hưởng nội suy.
 - Đã kiểm tra bằng tính toán FK theo chuỗi render: lúc giữ cúi ngực nằm DƯỚI lưng trên màn hình (đỉnh thân hướng +Z). Chưa build Android/`cargo test` được; cần build lại thư viện Rust (`clip_fun.rs` đã sinh lại).
+
+## v19: cúi vừa phải + nâng cấp nhịp cúi chào
+- Độ cúi giảm từ ~88° xuống **~36°** (overshoot 39°), đầu cúi thêm ~20° (trễ nhịp theo thân), không còn gập ngang.
+- Nhịp 4 pha: chuẩn bị (hít vào ưỡn nhẹ, đứng thẳng, đầu nhìn khán giả) -> hạ xuống có overshoot -> giữ thở (đảo trọng lượng thân trái/phải, đầu liếc nhẹ) -> đứng dậy ưỡn nhẹ +4°, ngẩng nhìn lại rồi gật chào.
+- Tay phải áp ngực, tay trái đưa ra sau làm đối trọng (như chào quý tộc), chân phải trượt lùi nhẹ (bớt bắt chéo), chân trái đỡ; cape bồng lên theo quán tính lúc hạ và lúc đứng dậy.
+- Mốc thời gian (SEGS) và `PetController.kt` giữ nguyên. Cần build lại thư viện Rust.
+
+## v19: cúi vừa phải + nâng cấp nhịp cúi chào
+- Độ cúi giảm từ ~88° xuống **~36°** (overshoot 39°), đầu cúi thêm ~20° (trễ nhịp theo thân), không còn gập ngang.
+- Nhịp 4 pha: chuẩn bị (hít vào ưỡn nhẹ, đứng thẳng, đầu nhìn khán giả) -> hạ xuống có overshoot -> giữ thở (đảo trọng lượng thân trái/phải, đầu liếc nhẹ) -> đứng dậy ưỡn nhẹ +4°, ngẩng nhìn lại rồi gật chào.
+- Tay phải áp ngực, tay trái đưa ra sau làm đối trọng (như chào quý tộc), chân phải trượt lùi nhẹ (bớt bắt chéo), chân trái đỡ; cape bồng lên theo quán tính lúc hạ và lúc đứng dậy.
+- Mốc thời gian (SEGS) và `PetController.kt` giữ nguyên. Cần build lại thư viện Rust.
+
+## v20: làm chậm toàn bộ màn khoe cape (9,7s -> ~11,2s)
+- `SEGS`: tạo dáng x1,7 -> x2,0; quay người + hít vào x1,35 -> x1,6; cúi xuống x1,6 -> x2,0; giữ cúi x2,4 -> x2,6; đứng dậy x1,6 -> x2,0. Đoạn bật/xoay/tiếp đất (0 – 1,5s) giữ nguyên để khớp spin Kotlin và cú nảy camera.
+- `PetController.kt` bám mốc mới: `TURN_START` 4,9s, `TURN_SECONDS` 1,32s, camera đẩy nhẹ 2,1 – 5,4s, đẩy vào lúc cúi 6,3 – 10,9s, dừng 11,3s, `SHOW_OFF_ACTIVE_MILLIS` 13000, lưới an toàn recenter 8s.
+- Cần build lại thư viện Rust và app.
+
+## v21: tay chân lúc chào bớt cứng
+- Tay buông như con lắc: góc tay trễ theo vận tốc của thân (quán tính 0,3s) nên khi thân hạ/đứng dậy tay đung đưa trễ nhịp thay vì dính cứng vào thân.
+- Follow-through: khi thân chạm đáy cúi (4,95u) và lúc đứng dậy (5,85u) tay/chân dao động tắt dần (1,1–1,5Hz), tay phải khẽ vỗ nhẹ vào ngực; mọi dao động tắt hẳn trước khi về nghỉ.
+- Đảo trọng lượng lúc giữ cúi: hai tay và hai chân đung đưa ngược pha (cánh tay dang/khép vài độ, chân chuyển tải trọng trái/phải).
+- Không đổi lò xo SPRING/LAG nên các đoạn trước đó (đã duyệt) giữ nguyên. Cần build lại thư viện Rust.
